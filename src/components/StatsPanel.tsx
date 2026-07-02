@@ -1,0 +1,830 @@
+'use client';
+
+import React, { useState } from 'react';
+import { Team, Group, Match, MatchStats, PlayerStats, GoalkeeperStats } from '@/types';
+import { Trophy, Calendar, Shield, Users, Plus, Trash2, Award, Zap, Heart } from 'lucide-react';
+
+interface StatsPanelProps {
+  registeredTeams: Team[];
+  groups: Group[];
+  knockoutMatches: Match[];
+  matchStats: Record<string, MatchStats>;
+  setMatchStats: React.Dispatch<React.SetStateAction<Record<string, MatchStats>>>;
+}
+
+export default function StatsPanel({
+  registeredTeams,
+  groups,
+  knockoutMatches,
+  matchStats,
+  setMatchStats
+}: StatsPanelProps) {
+  // Pestaña interna de las tablas de estadísticas: 'scorers' | 'goalkeepers' | 'matches'
+  const [innerTab, setInnerTab] = useState<'scorers' | 'goalkeepers' | 'matches'>('scorers');
+  
+  // Estado para el partido seleccionado para editar estadísticas
+  const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+
+  // Estados del editor de estadísticas de partido
+  const [customHomeScorer, setCustomHomeScorer] = useState<string>("");
+  const [homeScorerGoals, setHomeScorerGoals] = useState<number>(1);
+
+  const [customAwayScorer, setCustomAwayScorer] = useState<string>("");
+  const [awayScorerGoals, setAwayScorerGoals] = useState<number>(1);
+
+  // Estados de porteros del partido
+  const [customHomeGoalkeeper, setCustomHomeGoalkeeper] = useState<string>("");
+  const [homeGkConceded, setHomeGkConceded] = useState<number>(0);
+  const [homeGkMatches, setHomeGkMatches] = useState<number>(1);
+
+  const [customAwayGoalkeeper, setCustomAwayGoalkeeper] = useState<string>("");
+  const [awayGkConceded, setAwayGkConceded] = useState<number>(0);
+  const [awayGkMatches, setAwayGkMatches] = useState<number>(1);
+
+  // 1. Obtener todos los partidos del torneo (grupos + eliminatorias)
+  const allMatches: Match[] = [];
+  groups.forEach(g => {
+    allMatches.push(...g.matches);
+  });
+  allMatches.push(...knockoutMatches);
+
+  // Helper para buscar un equipo
+  const findTeam = (teamId: string | null) => {
+    if (!teamId) return null;
+    return registeredTeams.find(t => t.id === teamId) || null;
+  };
+
+  // 2. Calcular estadísticas acumuladas
+  const scorerTotals: Record<string, { name: string; teamName: string; logoUrl: string; goals: number }> = {};
+  const gkTotals: Record<string, { name: string; teamName: string; logoUrl: string; conceded: number; matchesPlayed: number }> = {};
+
+  Object.entries(matchStats).forEach(([matchId, stats]) => {
+    const match = allMatches.find(m => m.id === matchId);
+
+    // Sumar goleadores
+    stats.scorers.forEach(s => {
+      const key = `${s.playerName}_${s.playerId}`; // Unicidad
+      let teamName = "Desconocido";
+      let logoUrl = "⚽";
+      
+      const team = registeredTeams.find(t => t.players?.some(p => p.id === s.playerId));
+      if (team) {
+        teamName = team.name;
+        logoUrl = team.logoUrl || "⚽";
+      } else if (match) {
+        if (s.playerId.startsWith('custom_h_') && match.homeTeamId) {
+          const t = findTeam(match.homeTeamId);
+          if (t) {
+            teamName = t.name;
+            logoUrl = t.logoUrl || "⚽";
+          }
+        } else if (s.playerId.startsWith('custom_a_') && match.awayTeamId) {
+          const t = findTeam(match.awayTeamId);
+          if (t) {
+            teamName = t.name;
+            logoUrl = t.logoUrl || "⚽";
+          }
+        }
+      }
+
+      if (!scorerTotals[key]) {
+        scorerTotals[key] = { name: s.playerName, teamName, logoUrl, goals: 0 };
+      }
+      scorerTotals[key].goals += s.goals;
+    });
+
+    // Sumar porteros
+    stats.goalkeepers.forEach(gk => {
+      const key = `${gk.playerName}_${gk.playerId}`;
+      let teamName = "Desconocido";
+      let logoUrl = "⚽";
+      
+      const team = registeredTeams.find(t => t.players?.some(p => p.id === gk.playerId));
+      if (team) {
+        teamName = team.name;
+        logoUrl = team.logoUrl || "⚽";
+      } else if (match) {
+        if (gk.playerId.startsWith('custom_gk_h_') && match.homeTeamId) {
+          const t = findTeam(match.homeTeamId);
+          if (t) {
+            teamName = t.name;
+            logoUrl = t.logoUrl || "⚽";
+          }
+        } else if (gk.playerId.startsWith('custom_gk_a_') && match.awayTeamId) {
+          const t = findTeam(match.awayTeamId);
+          if (t) {
+            teamName = t.name;
+            logoUrl = t.logoUrl || "⚽";
+          }
+        }
+      }
+
+      if (!gkTotals[key]) {
+        gkTotals[key] = { name: gk.playerName, teamName, logoUrl, conceded: 0, matchesPlayed: 0 };
+      }
+      gkTotals[key].conceded += gk.goalsConceded;
+      gkTotals[key].matchesPlayed += gk.matchesPlayed;
+    });
+  });
+
+  // Convertir a arrays ordenados
+  const scorersLeaderboard = Object.values(scorerTotals).sort((a, b) => b.goals - a.goals);
+  const goalkeepersLeaderboard = Object.values(gkTotals)
+    .map(gk => ({
+      ...gk,
+      average: gk.matchesPlayed > 0 ? Number((gk.conceded / gk.matchesPlayed).toFixed(2)) : 0
+    }))
+    .sort((a, b) => {
+      // Ordenar por promedio menor a mayor. A igualdad, por más partidos jugados.
+      if (a.average !== b.average) return a.average - b.average;
+      return b.matchesPlayed - a.matchesPlayed;
+    });
+
+  // Abrir editor para un partido
+  const handleOpenEditor = (match: Match) => {
+    setSelectedMatch(match);
+    
+    // Obtener estadísticas guardadas previamente si existen
+    const currentStats = matchStats[match.id] || { scorers: [], goalkeepers: [] };
+    
+    // Resetear formularios de goleadores
+    setCustomHomeScorer("");
+    setHomeScorerGoals(1);
+
+    setCustomAwayScorer("");
+    setAwayScorerGoals(1);
+
+    // Inicializar porteros (por defecto sugerimos vacio, con goles encajados = marcador del rival)
+    const homeTeamObj = findTeam(match.homeTeamId);
+    const awayTeamObj = findTeam(match.awayTeamId);
+
+    const savedHomeGk = currentStats.goalkeepers.find(gk => {
+      return homeTeamObj?.players?.some(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gk.playerName.toLowerCase()) || gk.playerId.startsWith('custom_gk_h_') || false;
+    });
+    const savedAwayGk = currentStats.goalkeepers.find(gk => {
+      return awayTeamObj?.players?.some(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gk.playerName.toLowerCase()) || gk.playerId.startsWith('custom_gk_a_') || false;
+    });
+
+    if (savedHomeGk) {
+      setCustomHomeGoalkeeper(savedHomeGk.playerName);
+      setHomeGkConceded(savedHomeGk.goalsConceded);
+      setHomeGkMatches(savedHomeGk.matchesPlayed);
+    } else {
+      setCustomHomeGoalkeeper("");
+      setHomeGkConceded(match.awayScore ?? 0);
+      setHomeGkMatches(1);
+    }
+
+    if (savedAwayGk) {
+      setCustomAwayGoalkeeper(savedAwayGk.playerName);
+      setAwayGkConceded(savedAwayGk.goalsConceded);
+      setAwayGkMatches(savedAwayGk.matchesPlayed);
+    } else {
+      setCustomAwayGoalkeeper("");
+      setAwayGkConceded(match.homeScore ?? 0);
+      setAwayGkMatches(1);
+    }
+  };
+
+  // Añadir goleador
+  const handleAddScorer = (side: 'home' | 'away') => {
+    if (!selectedMatch) return;
+    const teamId = side === 'home' ? selectedMatch.homeTeamId : selectedMatch.awayTeamId;
+    const teamObj = findTeam(teamId);
+    if (!teamObj) return;
+
+    const customVal = side === 'home' ? customHomeScorer.trim() : customAwayScorer.trim();
+    const goalsVal = side === 'home' ? homeScorerGoals : awayScorerGoals;
+
+    if (!customVal) return;
+
+    // Buscar si coincide con algún jugador de la plantilla para tener el ID, si no se genera uno nuevo
+    const existingPlayer = teamObj.players?.find(p => `${p.firstName} ${p.lastName}`.toLowerCase() === customVal.toLowerCase());
+    const prefix = side === 'home' ? 'custom_h_' : 'custom_a_';
+    const pId = existingPlayer ? existingPlayer.id : `${prefix}${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+    const pName = existingPlayer ? `${existingPlayer.firstName} ${existingPlayer.lastName}` : customVal;
+
+    const currentStats = matchStats[selectedMatch.id] || { scorers: [], goalkeepers: [] };
+    
+    // Comprobar si ya existe para sumarle o añadirlo nuevo
+    let updatedScorers = [...currentStats.scorers];
+    const existingIndex = updatedScorers.findIndex(s => s.playerName.toLowerCase() === pName.toLowerCase());
+    
+    if (existingIndex > -1) {
+      updatedScorers[existingIndex].goals += goalsVal;
+    } else {
+      updatedScorers.push({ playerId: pId, playerName: pName, goals: goalsVal });
+    }
+
+    setMatchStats(prev => ({
+      ...prev,
+      [selectedMatch.id]: {
+        ...currentStats,
+        scorers: updatedScorers
+      }
+    }));
+
+    // Resetear inputs de añadir goleador
+    if (side === 'home') {
+      setCustomHomeScorer("");
+      setHomeScorerGoals(1);
+    } else {
+      setCustomAwayScorer("");
+      setAwayScorerGoals(1);
+    }
+  };
+
+  // Eliminar goleador
+  const handleRemoveScorer = (pId: string) => {
+    if (!selectedMatch) return;
+    const currentStats = matchStats[selectedMatch.id];
+    if (!currentStats) return;
+
+    setMatchStats(prev => ({
+      ...prev,
+      [selectedMatch.id]: {
+        ...currentStats,
+        scorers: currentStats.scorers.filter(s => s.playerId !== pId)
+      }
+    }));
+  };
+
+  // Guardar porteros del partido
+  const handleSaveGoalkeepers = () => {
+    if (!selectedMatch) return;
+    const homeTeamObj = findTeam(selectedMatch.homeTeamId);
+    const awayTeamObj = findTeam(selectedMatch.awayTeamId);
+
+    const currentStats = matchStats[selectedMatch.id] || { scorers: [], goalkeepers: [] };
+    const updatedGoalkeepers: GoalkeeperStats[] = [];
+
+    // Guardar portero local si se ha introducido
+    if (customHomeGoalkeeper.trim()) {
+      const gkName = customHomeGoalkeeper.trim();
+      const existingPlayer = homeTeamObj?.players?.find(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gkName.toLowerCase());
+      const pId = existingPlayer ? existingPlayer.id : `custom_gk_h_${selectedMatch.id}`;
+      
+      updatedGoalkeepers.push({
+        playerId: pId,
+        playerName: existingPlayer ? `${existingPlayer.firstName} ${existingPlayer.lastName}` : gkName,
+        goalsConceded: homeGkConceded,
+        matchesPlayed: homeGkMatches
+      });
+    }
+
+    // Guardar portero visitante si se ha introducido
+    if (customAwayGoalkeeper.trim()) {
+      const gkName = customAwayGoalkeeper.trim();
+      const existingPlayer = awayTeamObj?.players?.find(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gkName.toLowerCase());
+      const pId = existingPlayer ? existingPlayer.id : `custom_gk_a_${selectedMatch.id}`;
+      
+      updatedGoalkeepers.push({
+        playerId: pId,
+        playerName: existingPlayer ? `${existingPlayer.firstName} ${existingPlayer.lastName}` : gkName,
+        goalsConceded: awayGkConceded,
+        matchesPlayed: awayGkMatches
+      });
+    }
+
+    setMatchStats(prev => ({
+      ...prev,
+      [selectedMatch.id]: {
+        ...currentStats,
+        goalkeepers: updatedGoalkeepers
+      }
+    }));
+
+    alert("✓ Estadísticas de porteros guardadas con éxito.");
+  };
+
+  return (
+    <div className="w-full max-w-6xl bg-zinc-900 border border-zinc-800 p-6 rounded-none shadow-2xl flex flex-col gap-6">
+      
+      {/* Cabecera del Panel */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-zinc-800 pb-4 gap-4">
+        <div className="flex items-center gap-2">
+          <Award className="w-5 h-5 text-yellow-400 animate-pulse" />
+          <h2 className="font-header font-black text-lg uppercase tracking-wider text-white">
+            Estadísticas y Premios Individuales del Torneo
+          </h2>
+        </div>
+
+        {/* Botones de Navegación de Pestañas Internas */}
+        <div className="flex bg-zinc-950 p-1 border border-zinc-850 gap-1 self-start md:self-auto">
+          <button
+            onClick={() => setInnerTab('scorers')}
+            className={`py-1.5 px-4 text-[10px] font-header font-black uppercase tracking-wider transition-all cursor-pointer ${
+              innerTab === 'scorers' ? 'bg-yellow-400 text-black' : 'text-zinc-450 hover:text-white'
+            }`}
+          >
+            Máximos Goleadores (Pichichi)
+          </button>
+          <button
+            onClick={() => setInnerTab('goalkeepers')}
+            className={`py-1.5 px-4 text-[10px] font-header font-black uppercase tracking-wider transition-all cursor-pointer ${
+              innerTab === 'goalkeepers' ? 'bg-yellow-400 text-black' : 'text-zinc-450 hover:text-white'
+            }`}
+          >
+            Portero Zamora (Menos Goleado)
+          </button>
+          <button
+            onClick={() => setInnerTab('matches')}
+            className={`py-1.5 px-4 text-[10px] font-header font-black uppercase tracking-wider transition-all cursor-pointer ${
+              innerTab === 'matches' ? 'bg-yellow-400 text-black' : 'text-zinc-450 hover:text-white'
+            }`}
+          >
+            Historial / Cargar Goles
+          </button>
+        </div>
+      </div>
+
+      {/* 1. SECCIÓN: TABLA DE GOLEADORES */}
+      {innerTab === 'scorers' && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-zinc-950/60 p-4 border border-zinc-850">
+            <p className="text-xs text-zinc-400 font-sans leading-relaxed">
+              Aquí se muestran los goleadores en orden descendente. Haz clic en la pestaña <strong>"Historial / Cargar Goles"</strong> para registrar los anotadores de cada partido.
+            </p>
+          </div>
+
+          <div className="border border-zinc-800 overflow-hidden bg-zinc-950">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="bg-zinc-900 border-b border-zinc-800 text-zinc-500 font-header font-bold text-[9px] tracking-widest uppercase">
+                  <th className="p-3 text-center w-14">POS</th>
+                  <th className="p-3">JUGADOR</th>
+                  <th className="p-3">CLUB</th>
+                  <th className="p-3 text-center w-28 text-yellow-400 font-black">GOLES</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-850">
+                {scorersLeaderboard.length > 0 ? (
+                  scorersLeaderboard.map((s, idx) => (
+                    <tr key={idx} className="hover:bg-zinc-850/30 transition-colors">
+                      <td className="p-3 text-center">
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-none text-xs font-data font-black ${
+                          idx === 0 ? 'bg-yellow-400 text-black' : idx === 1 ? 'bg-zinc-700 text-zinc-200' : idx === 2 ? 'bg-amber-800 text-amber-100' : 'bg-zinc-900 text-zinc-500'
+                        }`}>
+                          {idx + 1}
+                        </span>
+                      </td>
+                      <td className="p-3 font-header font-black text-sm uppercase text-white flex items-center gap-2">
+                        {idx === 0 && <Zap className="w-3.5 h-3.5 text-yellow-400 fill-current" />}
+                        {s.name}
+                      </td>
+                      <td className="p-3 text-zinc-400 font-header font-bold uppercase text-[10px]">
+                        <span className="mr-1.5">{s.logoUrl}</span>
+                        {s.teamName}
+                      </td>
+                      <td className="p-3 text-center text-sm font-data font-black text-yellow-400 bg-yellow-400/5">
+                        {s.goals}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={4} className="p-12 text-center text-zinc-550 italic font-header text-xs uppercase tracking-wider">
+                      Ningún gol registrado. Carga goles en la lista de partidos.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 2. SECCIÓN: TABLA DE PORTEROS */}
+      {innerTab === 'goalkeepers' && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-zinc-950/60 p-4 border border-zinc-850">
+            <p className="text-xs text-zinc-400 font-sans leading-relaxed">
+              El premio Zamora al portero menos goleado se calcula ordenando a los guardametas por su promedio de goles encajados por partido (menor a mayor).
+            </p>
+          </div>
+
+          <div className="border border-zinc-800 overflow-hidden bg-zinc-950">
+            <table className="w-full text-xs text-left">
+              <thead>
+                <tr className="bg-zinc-900 border-b border-zinc-800 text-zinc-500 font-header font-bold text-[9px] tracking-widest uppercase">
+                  <th className="p-3 text-center w-14">POS</th>
+                  <th className="p-3">PORTERO</th>
+                  <th className="p-3">CLUB</th>
+                  <th className="p-3 text-center w-24">PARTIDOS</th>
+                  <th className="p-3 text-center w-24">GOLES RECIBIDOS</th>
+                  <th className="p-3 text-center w-32 text-yellow-400 font-black">PROMEDIO / PJ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-850">
+                {goalkeepersLeaderboard.length > 0 ? (
+                  goalkeepersLeaderboard.map((gk, idx) => (
+                    <tr key={idx} className="hover:bg-zinc-850/30 transition-colors">
+                      <td className="p-3 text-center">
+                        <span className={`inline-flex items-center justify-center w-6 h-6 rounded-none text-xs font-data font-black ${
+                          idx === 0 ? 'bg-yellow-400 text-black' : idx === 1 ? 'bg-zinc-700 text-zinc-200' : idx === 2 ? 'bg-amber-800 text-amber-100' : 'bg-zinc-900 text-zinc-500'
+                        }`}>
+                          {idx + 1}
+                        </span>
+                      </td>
+                      <td className="p-3 font-header font-black text-sm uppercase text-white flex items-center gap-2">
+                        {idx === 0 && <Heart className="w-3.5 h-3.5 text-yellow-400 fill-current animate-pulse" />}
+                        {gk.name}
+                      </td>
+                      <td className="p-3 text-zinc-400 font-header font-bold uppercase text-[10px]">
+                        <span className="mr-1.5">{gk.logoUrl}</span>
+                        {gk.teamName}
+                      </td>
+                      <td className="p-3 text-center text-zinc-300 font-data font-bold">
+                        {gk.matchesPlayed}
+                      </td>
+                      <td className="p-3 text-center text-rose-400 font-data font-bold">
+                        {gk.conceded}
+                      </td>
+                      <td className="p-3 text-center text-sm font-data font-black text-yellow-400 bg-yellow-400/5">
+                        {gk.average.toFixed(2)}
+                      </td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={6} className="p-12 text-center text-zinc-550 italic font-header text-xs uppercase tracking-wider">
+                      Ningún portero registrado en las fichas de los partidos.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 3. SECCIÓN: LISTA DE PARTIDOS PARA CARGAR GOLES */}
+      {innerTab === 'matches' && (
+        <div className="flex flex-col gap-4">
+          <div className="bg-zinc-950/60 p-4 border border-zinc-850">
+            <p className="text-xs text-zinc-400 font-sans leading-relaxed">
+              Selecciona cualquier partido que ya se haya jugado (o en juego) para registrar sus goleadores y porteros asociados.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {allMatches.map((match) => {
+              const homeTeam = findTeam(match.homeTeamId);
+              const awayTeam = findTeam(match.awayTeamId);
+              if (!homeTeam || !awayTeam) return null;
+              
+              const stats = matchStats[match.id];
+              const hasStats = stats && (stats.scorers.length > 0 || stats.goalkeepers.length > 0);
+
+              return (
+                <div 
+                  key={match.id}
+                  className="bg-zinc-950 border border-zinc-850 p-4 flex flex-col gap-3 hover:border-zinc-700 transition-all justify-between"
+                >
+                  <div className="flex justify-between items-center text-[10px] text-zinc-550 border-b border-zinc-900 pb-2">
+                    <span className="font-header font-black uppercase text-yellow-400/80 bg-yellow-400/5 border border-yellow-400/10 px-1.5 py-0.5">
+                      {match.roundName}
+                    </span>
+                    <span className="font-mono text-zinc-500">
+                      {match.fechaHora 
+                        ? new Date(match.fechaHora).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                        : 'TBD'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between py-1">
+                    <span className="font-header font-black text-xs uppercase text-zinc-300 w-5/12 truncate flex items-center gap-1.5">
+                      <span>{homeTeam.logoUrl}</span>
+                      <span className="truncate">{homeTeam.name}</span>
+                    </span>
+                    <span className="w-2/12 text-center font-data font-black text-sm text-yellow-400 bg-yellow-400/10 px-2 py-0.5 border border-yellow-400/20">
+                      {match.homeScore ?? '-'} : {match.awayScore ?? '-'}
+                    </span>
+                    <span className="font-header font-black text-xs uppercase text-zinc-300 w-5/12 truncate flex items-center gap-1.5 justify-end text-right">
+                      <span className="truncate">{awayTeam.name}</span>
+                      <span>{awayTeam.logoUrl}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between border-t border-zinc-900 pt-3">
+                    <span className="text-[10px] text-zinc-500 font-sans">
+                      {hasStats ? (
+                        <span className="text-emerald-400 font-bold">✓ Datos cargados</span>
+                      ) : (
+                        <span className="text-zinc-650 italic">Sin datos de jugadores</span>
+                      )}
+                    </span>
+                    <button
+                      onClick={() => handleOpenEditor(match)}
+                      className={`text-[10px] font-header font-black uppercase tracking-wider px-3 py-1.5 rounded-none cursor-pointer transition-colors ${
+                        hasStats ? 'bg-zinc-800 text-zinc-350 hover:bg-zinc-700' : 'bg-yellow-400 text-black hover:bg-yellow-500'
+                      }`}
+                    >
+                      {hasStats ? 'Editar Estadísticas' : 'Cargar Goles/Porteros'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: EDITOR DE ESTADÍSTICAS DEL PARTIDO */}
+      {selectedMatch && (
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-zinc-900 border border-zinc-850 p-6 max-w-3xl w-full flex flex-col gap-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            
+            <button
+              onClick={() => setSelectedMatch(null)}
+              className="absolute top-4 right-4 text-zinc-400 hover:text-white font-header font-black text-xs uppercase cursor-pointer"
+            >
+              Cerrar ×
+            </button>
+
+            {/* Cabecera del Editor */}
+            <div className="border-b border-zinc-800 pb-3 flex flex-col gap-1.5">
+              <span className="text-[10px] font-header font-black text-yellow-400 uppercase tracking-widest">
+                Editor de Acta y Estadísticas de Jugadores
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="font-header font-black text-lg uppercase text-white">
+                  {findTeam(selectedMatch.homeTeamId)?.name}
+                </span>
+                <span className="font-data font-black text-sm bg-zinc-950 px-2 py-0.5 border border-zinc-800 text-yellow-400">
+                  {selectedMatch.homeScore ?? 0} - {selectedMatch.awayScore ?? 0}
+                </span>
+                <span className="font-header font-black text-lg uppercase text-white">
+                  {findTeam(selectedMatch.awayTeamId)?.name}
+                </span>
+              </div>
+              <span className="text-[10px] text-zinc-550 font-sans uppercase">
+                {selectedMatch.roundName} • {selectedMatch.pistaCampo || 'Pista TBD'}
+              </span>
+            </div>
+
+            {/* Panel de Goleadores (Lado Local y Lado Visitante) */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Lado Local */}
+              <div className="flex flex-col gap-4 bg-zinc-950 p-4 border border-zinc-850">
+                <span className="font-header font-black text-xs text-white border-b border-zinc-900 pb-1.5 flex justify-between items-center">
+                  <span>GOLEADORES: {findTeam(selectedMatch.homeTeamId)?.name}</span>
+                  <span className="text-zinc-500 font-sans text-[10px]">Total: {selectedMatch.homeScore ?? 0} goles</span>
+                </span>
+
+                {/* Formulario Añadir Goleador Local */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      list={`home-scorers-list-${selectedMatch.id}`}
+                      value={customHomeScorer}
+                      onChange={(e) => setCustomHomeScorer(e.target.value)}
+                      placeholder="Escribe el nombre del goleador..."
+                      className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    />
+                    <datalist id={`home-scorers-list-${selectedMatch.id}`}>
+                      {findTeam(selectedMatch.homeTeamId)?.players?.map(p => (
+                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                      ))}
+                    </datalist>
+
+                    <input 
+                      type="number"
+                      min="1"
+                      value={homeScorerGoals}
+                      onChange={(e) => setHomeScorerGoals(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-14 bg-zinc-900 border border-zinc-800 text-white text-xs font-bold text-center px-1 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      title="Goles anotados"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddScorer('home')}
+                      className="bg-yellow-400 hover:bg-yellow-500 text-black px-3 font-header font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de goleadores locales añadidos */}
+                <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[120px] pr-1">
+                  {matchStats[selectedMatch.id]?.scorers
+                    .filter(s => {
+                      // Filtrar para el equipo local
+                      return findTeam(selectedMatch.homeTeamId)?.players?.some(p => p.id === s.playerId) || s.playerId.startsWith('custom_') || false;
+                    })
+                    .map((s, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-2 bg-zinc-900/60 border border-zinc-900 text-xs">
+                        <span className="font-header font-black text-zinc-300 uppercase">{s.playerName}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-data font-black text-yellow-400 bg-yellow-400/5 px-2 py-0.5 border border-yellow-400/10">{s.goals} G</span>
+                          <button
+                            onClick={() => handleRemoveScorer(s.playerId)}
+                            className="text-rose-500 hover:text-rose-400 text-[10px] font-bold"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              {/* Lado Visitante */}
+              <div className="flex flex-col gap-4 bg-zinc-950 p-4 border border-zinc-850">
+                <span className="font-header font-black text-xs text-white border-b border-zinc-900 pb-1.5 flex justify-between items-center">
+                  <span>GOLEADORES: {findTeam(selectedMatch.awayTeamId)?.name}</span>
+                  <span className="text-zinc-500 font-sans text-[10px]">Total: {selectedMatch.awayScore ?? 0} goles</span>
+                </span>
+
+                {/* Formulario Añadir Goleador Visitante */}
+                <div className="flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      list={`away-scorers-list-${selectedMatch.id}`}
+                      value={customAwayScorer}
+                      onChange={(e) => setCustomAwayScorer(e.target.value)}
+                      placeholder="Escribe el nombre del goleador..."
+                      className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    />
+                    <datalist id={`away-scorers-list-${selectedMatch.id}`}>
+                      {findTeam(selectedMatch.awayTeamId)?.players?.map(p => (
+                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                      ))}
+                    </datalist>
+
+                    <input 
+                      type="number"
+                      min="1"
+                      value={awayScorerGoals}
+                      onChange={(e) => setAwayScorerGoals(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                      className="w-14 bg-zinc-900 border border-zinc-800 text-white text-xs font-bold text-center px-1 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      title="Goles anotados"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => handleAddScorer('away')}
+                      className="bg-yellow-400 hover:bg-yellow-500 text-black px-3 font-header font-black text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Lista de goleadores visitantes añadidos */}
+                <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[120px] pr-1">
+                  {matchStats[selectedMatch.id]?.scorers
+                    .filter(s => {
+                      // Filtrar para el equipo visitante
+                      return findTeam(selectedMatch.awayTeamId)?.players?.some(p => p.id === s.playerId) || s.playerId.startsWith('custom_a_') || false;
+                    })
+                    .map((s, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-2 bg-zinc-900/60 border border-zinc-900 text-xs">
+                        <span className="font-header font-black text-zinc-300 uppercase">{s.playerName}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="font-data font-black text-yellow-400 bg-yellow-400/5 px-2 py-0.5 border border-yellow-400/10">{s.goals} G</span>
+                          <button
+                            onClick={() => handleRemoveScorer(s.playerId)}
+                            className="text-rose-500 hover:text-rose-400 text-[10px] font-bold"
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+            </div>
+
+            {/* SECCIÓN DE PORTEROS DEL PARTIDO */}
+            <div className="flex flex-col gap-4 bg-zinc-950 p-4 border border-zinc-850">
+              <span className="font-header font-black text-xs text-white border-b border-zinc-900 pb-1.5 flex justify-between items-center">
+                <span>PORTEROS DE LA JORNADA</span>
+                <span className="text-zinc-550 font-sans text-[10px]">Cargar goles encajados y partidos jugados</span>
+              </span>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Portero Local */}
+                <div className="flex flex-col gap-3">
+                  <span className="font-header font-bold text-[10px] text-zinc-400 uppercase">Portero Local (Defiende a {findTeam(selectedMatch.homeTeamId)?.name})</span>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      list={`home-gk-list-${selectedMatch.id}`}
+                      value={customHomeGoalkeeper}
+                      onChange={(e) => setCustomHomeGoalkeeper(e.target.value)}
+                      placeholder="Escribe el nombre del portero..."
+                      className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    />
+                    <datalist id={`home-gk-list-${selectedMatch.id}`}>
+                      {findTeam(selectedMatch.homeTeamId)?.players?.map(p => (
+                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                      ))}
+                    </datalist>
+
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <div className="flex flex-col gap-1">
+                        <label className="font-header text-[9px] uppercase text-zinc-550">Goles Encajados</label>
+                        <input 
+                          type="number"
+                          min="0"
+                          value={homeGkConceded}
+                          onChange={(e) => setHomeGkConceded(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="h-8 px-2 bg-zinc-900 border border-zinc-800 text-white text-xs font-mono focus:outline-none text-center"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="font-header text-[9px] uppercase text-zinc-550">Partidos Jugados</label>
+                        <input 
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={homeGkMatches}
+                          onChange={(e) => setHomeGkMatches(Math.max(0, parseFloat(e.target.value) || 0))}
+                          className="h-8 px-2 bg-zinc-900 border border-zinc-800 text-white text-xs font-mono focus:outline-none text-center"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Portero Visitante */}
+                <div className="flex flex-col gap-3">
+                  <span className="font-header font-bold text-[10px] text-zinc-400 uppercase">Portero Visitante (Defiende a {findTeam(selectedMatch.awayTeamId)?.name})</span>
+                  <div className="flex flex-col gap-2">
+                    <input
+                      type="text"
+                      list={`away-gk-list-${selectedMatch.id}`}
+                      value={customAwayGoalkeeper}
+                      onChange={(e) => setCustomAwayGoalkeeper(e.target.value)}
+                      placeholder="Escribe el nombre del portero..."
+                      className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    />
+                    <datalist id={`away-gk-list-${selectedMatch.id}`}>
+                      {findTeam(selectedMatch.awayTeamId)?.players?.map(p => (
+                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                      ))}
+                    </datalist>
+
+                    <div className="grid grid-cols-2 gap-2 mt-1">
+                      <div className="flex flex-col gap-1">
+                        <label className="font-header text-[9px] uppercase text-zinc-550">Goles Encajados</label>
+                        <input 
+                          type="number"
+                          min="0"
+                          value={awayGkConceded}
+                          onChange={(e) => setAwayGkConceded(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                          className="h-8 px-2 bg-zinc-900 border border-zinc-800 text-white text-xs font-mono focus:outline-none text-center"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="font-header text-[9px] uppercase text-zinc-550">Partidos Jugados</label>
+                        <input 
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.1"
+                          value={awayGkMatches}
+                          onChange={(e) => setAwayGkMatches(Math.max(0, parseFloat(e.target.value) || 0))}
+                          className="h-8 px-2 bg-zinc-900 border border-zinc-800 text-white text-xs font-mono focus:outline-none text-center"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botón guardar porteros */}
+              <button
+                type="button"
+                onClick={handleSaveGoalkeepers}
+                className="w-full py-2 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-white font-header font-black uppercase text-[10px] tracking-wider transition-colors cursor-pointer mt-2"
+              >
+                Guardar Porteros del Partido
+              </button>
+            </div>
+
+            {/* Footer del Modal */}
+            <div className="flex justify-end border-t border-zinc-800 pt-4">
+              <button
+                onClick={() => setSelectedMatch(null)}
+                className="px-5 py-2 bg-yellow-400 hover:bg-yellow-500 text-black font-header font-black uppercase text-xs tracking-wider transition-colors cursor-pointer"
+              >
+                Finalizar Edición del Partido
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
