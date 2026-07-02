@@ -1,9 +1,6 @@
 @echo off
-:: Configurar codificación a UTF-8 para ver acentos en consola
-chcp 65001 > nul
-
 echo ===================================================
-echo   CONFIGURACIÓN AUTOMÁTICA DEL PROYECTO
+echo   CONFIGURACION AUTOMATICA DEL PROYECTO
 echo ===================================================
 echo.
 
@@ -11,14 +8,14 @@ echo.
 git --version >nul 2>&1
 if %errorlevel% equ 0 goto check_node
 
-echo [!] Git no está instalado en este sistema.
+echo [!] Git no esta instalado en este sistema.
 echo Intentando instalar Git usando winget...
 winget install --id Git.Git -e --accept-source-agreements --accept-package-agreements
 if %errorlevel% equ 0 goto git_installed_ok
 
 echo.
-echo [ERROR] No se pudo instalar Git automáticamente.
-echo Por favor, descárgalo e instálalo manualmente desde: https://git-scm.com/
+echo [ERROR] No se pudo instalar Git automaticamente.
+echo Por favor, descargalo e instalalo manualmente desde: https://git-scm.com/
 pause
 exit /b
 
@@ -36,14 +33,14 @@ echo [OK] Git detectado.
 node --version >nul 2>&1
 if %errorlevel% equ 0 goto clone_repo
 
-echo [!] Node.js no está instalado en este sistema.
+echo [!] Node.js no esta instalado en este sistema.
 echo Intentando instalar Node.js LTS usando winget...
 winget install --id OpenJS.NodeJS -e --accept-source-agreements --accept-package-agreements
 if %errorlevel% equ 0 goto node_installed_ok
 
 echo.
-echo [ERROR] No se pudo instalar Node.js automáticamente.
-echo Por favor, descárgalo e instálalo manualmente desde: https://nodejs.org/
+echo [ERROR] No se pudo instalar Node.js automaticamente.
+echo Por favor, descargalo e instalalo manualmente desde: https://nodejs.org/
 pause
 exit /b
 
@@ -64,7 +61,7 @@ echo.
 echo [PROCESO] Clonando el repositorio...
 git clone https://github.com/alvarogarcia60/gestion-maraton.git
 if %errorlevel% neq 0 (
-    echo [ERROR] No se pudo clonar el repositorio. Verifica tu conexión a internet.
+    echo [ERROR] No se pudo clonar el repositorio. Verifica tu conexion a internet.
     pause
     exit /b
 )
@@ -99,7 +96,8 @@ code .
 
 echo.
 echo [PROCESO] Iniciando servidor de desarrollo...
-echo La aplicación debería abrirse en http://localhost:3000
+echo La aplicacion deberia abrirse en http://localhost:3000
 echo.
 call npm run dev
 pause
+
