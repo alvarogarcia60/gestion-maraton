@@ -40,12 +40,84 @@ export default function GroupStage({
   
   const [isExportingActa, setIsExportingActa] = useState(false);
 
-  // Estados para la Planificación de Horarios y Campos
+  // Estados para la Planificación de Horarios y Campos - Fase de Grupos
   const [startDate, setStartDate] = useState<string>('2026-06-25');
   const [startTime, setStartTime] = useState<string>('09:00');
   const [matchDuration, setMatchDuration] = useState<number>(40); // 40 min por defecto
   const [breakDuration, setBreakDuration] = useState<number>(10); // 10 min por defecto
   const [numFields, setNumFields] = useState<number>(2); // 2 campos por defecto
+
+  // Estados para la Planificación de Horarios y Campos - Fase Final / Cruces
+  const [bracketStartDate, setBracketStartDate] = useState<string>('2026-06-26');
+  const [bracketStartTime, setBracketStartTime] = useState<string>('09:00');
+  const [bracketMatchDuration, setBracketMatchDuration] = useState<number>(40); // 40 min por defecto
+  const [bracketBreakDuration, setBracketBreakDuration] = useState<number>(10); // 10 min por defecto
+  const [bracketNumFields, setBracketNumFields] = useState<number>(2); // 2 campos por defecto
+
+  // Efecto para actualizar bracketStartDate al día siguiente cuando cambia startDate
+  useEffect(() => {
+    try {
+      const date = new Date(startDate);
+      if (!isNaN(date.getTime())) {
+        date.setDate(date.getDate() + 1);
+        const yyyy = date.getFullYear();
+        const mm = String(date.getMonth() + 1).padStart(2, '0');
+        const dd = String(date.getDate()).padStart(2, '0');
+        setBracketStartDate(`${yyyy}-${mm}-${dd}`);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }, [startDate]);
+
+  // Cargar configuración de horarios específica del torneo de localStorage al montar
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const activeTId = localStorage.getItem('current_tournament_id') || 'default';
+      const savedSched = localStorage.getItem(`tournament_sched_${activeTId}`);
+      if (savedSched) {
+        try {
+          const parsed = JSON.parse(savedSched);
+          if (parsed.startDate) setStartDate(parsed.startDate);
+          if (parsed.startTime) setStartTime(parsed.startTime);
+          if (parsed.matchDuration) setMatchDuration(parsed.matchDuration);
+          if (parsed.breakDuration) setBreakDuration(parsed.breakDuration);
+          if (parsed.numFields) setNumFields(parsed.numFields);
+          
+          if (parsed.bracketStartDate) setBracketStartDate(parsed.bracketStartDate);
+          if (parsed.bracketStartTime) setBracketStartTime(parsed.bracketStartTime);
+          if (parsed.bracketMatchDuration) setBracketMatchDuration(parsed.bracketMatchDuration);
+          if (parsed.bracketBreakDuration) setBracketBreakDuration(parsed.bracketBreakDuration);
+          if (parsed.bracketNumFields) setBracketNumFields(parsed.bracketNumFields);
+        } catch (e) {
+          console.error("Error parsing scheduling config:", e);
+        }
+      }
+    }
+  }, []);
+
+  // Guardar configuración de horarios en localStorage al cambiar cualquier parámetro
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const activeTId = localStorage.getItem('current_tournament_id') || 'default';
+      const configObj = {
+        startDate,
+        startTime,
+        matchDuration,
+        breakDuration,
+        numFields,
+        bracketStartDate,
+        bracketStartTime,
+        bracketMatchDuration,
+        bracketBreakDuration,
+        bracketNumFields
+      };
+      localStorage.setItem(`tournament_sched_${activeTId}`, JSON.stringify(configObj));
+    }
+  }, [
+    startDate, startTime, matchDuration, breakDuration, numFields,
+    bracketStartDate, bracketStartTime, bracketMatchDuration, bracketBreakDuration, bracketNumFields
+  ]);
 
   // Función auxiliar para calcular las horas de inicio/fin de cada grupo en los campos
   const getGroupScheduleInfo = (groupIndex: number) => {
@@ -256,6 +328,86 @@ export default function GroupStage({
     setGroups(updatedGroups);
   };
 
+  const handleMatchScheduleChange = (groupId: string, matchId: string, field: 'fechaHora' | 'pistaCampo', value: string) => {
+    setGroups(prev => prev.map(g => {
+      if (g.id !== groupId) return g;
+      return {
+        ...g,
+        matches: g.matches.map(m => {
+          if (m.id !== matchId) return m;
+          return {
+            ...m,
+            [field]: value
+          };
+        })
+      };
+    }));
+  };
+
+  const getBracketSchedulePreview = () => {
+    const n = directQualifiers * numGroups + wildcards;
+    if (n <= 1) {
+      return [];
+    }
+
+    // Potencia de 2
+    let bracketSize = 2;
+    while (bracketSize < n) {
+      bracketSize *= 2;
+    }
+
+    const numRounds = Math.log2(bracketSize);
+    const roundsInfo: { name: string; startTimeStr: string; endTimeStr: string; matchesCount: number }[] = [];
+
+    const startDateTimeStr = `${bracketStartDate}T${bracketStartTime}`;
+    let roundStartDateTime = new Date(startDateTimeStr);
+
+    const formatTime = (d: Date) => {
+      return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    };
+
+    const formatDate = (d: Date) => {
+      return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit' });
+    };
+
+    for (let L = numRounds - 1; L >= 0; L--) {
+      const numMatches = Math.pow(2, L);
+      let roundName = '';
+      if (L === 0) roundName = 'Final';
+      else if (L === 1) roundName = 'Semifinales';
+      else if (L === 2) roundName = 'Cuartos de final';
+      else if (L === 3) roundName = 'Octavos de final';
+      else if (L === 4) roundName = 'Dieciseisavos de final';
+      else roundName = `Ronda de ${numMatches * 2}`;
+
+      const fieldsTimes = Array.from({ length: bracketNumFields }, () => new Date(roundStartDateTime));
+      let maxRoundEndMs = roundStartDateTime.getTime();
+
+      for (let i = 0; i < numMatches; i++) {
+        const fieldIdx = i % bracketNumFields;
+        const matchTime = new Date(fieldsTimes[fieldIdx]);
+        const matchEndMs = matchTime.getTime() + (bracketMatchDuration * 60000);
+        if (matchEndMs > maxRoundEndMs) {
+          maxRoundEndMs = matchEndMs;
+        }
+        fieldsTimes[fieldIdx] = new Date(matchTime.getTime() + (bracketMatchDuration + bracketBreakDuration) * 60000);
+      }
+
+      const roundEndDateTime = new Date(maxRoundEndMs);
+
+      roundsInfo.push({
+        name: roundName,
+        startTimeStr: `${formatDate(roundStartDateTime)} ${formatTime(roundStartDateTime)}`,
+        endTimeStr: `${formatDate(roundEndDateTime)} ${formatTime(roundEndDateTime)}`,
+        matchesCount: numMatches
+      });
+
+      roundStartDateTime = new Date(maxRoundEndMs);
+    }
+
+    return roundsInfo;
+  };
+
   const handleGenerateBracket = () => {
     if (groups.length === 0) return;
 
@@ -325,6 +477,45 @@ export default function GroupStage({
 
     // Generar el árbol de partidos eliminatorios
     const generatedMatches = generateKnockoutMatches(allQualifiedTeams, 'fase-eliminatorias');
+
+    // Enriquecer los partidos con fechaHora y pistaCampo secuencialmente ronda por ronda
+    const roundNamesInOrder: string[] = [];
+    generatedMatches.forEach(m => {
+      if (!roundNamesInOrder.includes(m.roundName)) {
+        roundNamesInOrder.push(m.roundName);
+      }
+    });
+
+    const startDateTimeStr = `${bracketStartDate}T${bracketStartTime}`;
+    let roundStartDateTime = new Date(startDateTimeStr);
+
+    roundNamesInOrder.forEach((rName) => {
+      const roundMatches = generatedMatches.filter(m => m.roundName === rName);
+      const fieldsTimes = Array.from({ length: bracketNumFields }, () => new Date(roundStartDateTime));
+      let maxRoundEndMs = roundStartDateTime.getTime();
+
+      roundMatches.forEach((match, idx) => {
+        const fieldIdx = idx % bracketNumFields;
+        const fieldName = `Campo ${fieldIdx + 1}`;
+        const matchTime = new Date(fieldsTimes[fieldIdx]);
+
+        const pad = (num: number) => String(num).padStart(2, '0');
+        const matchTimeLocalStr = `${matchTime.getFullYear()}-${pad(matchTime.getMonth() + 1)}-${pad(matchTime.getDate())}T${pad(matchTime.getHours())}:${pad(matchTime.getMinutes())}`;
+
+        match.fechaHora = matchTimeLocalStr;
+        match.pistaCampo = fieldName;
+
+        const matchEndMs = matchTime.getTime() + (bracketMatchDuration * 60000);
+        if (matchEndMs > maxRoundEndMs) {
+          maxRoundEndMs = matchEndMs;
+        }
+
+        fieldsTimes[fieldIdx] = new Date(matchTime.getTime() + (bracketMatchDuration + bracketBreakDuration) * 60000);
+      });
+
+      // La siguiente ronda comienza al finalizar la anterior
+      roundStartDateTime = new Date(maxRoundEndMs);
+    });
     
     // Avanzar a la fase final pasándole los partidos generados
     onTransitionToKnockout(generatedMatches);
@@ -492,96 +683,198 @@ export default function GroupStage({
         </div>
 
         {/* CONFIGURACIÓN DE HORARIOS Y PISTAS */}
-        <div className="flex flex-col gap-4 bg-zinc-950 p-4 border border-zinc-850 mt-2">
-          <h3 className="font-header font-black text-xs uppercase tracking-wider text-yellow-400 border-b border-zinc-800 pb-2 flex items-center gap-2">
-            <Calendar className="w-3.5 h-3.5" /> Planificación de Horarios y Distribución de Campos
+        <div className="flex flex-col gap-6 bg-zinc-950 p-6 border border-zinc-850 mt-2">
+          <h3 className="font-header font-black text-sm uppercase tracking-wider text-yellow-400 border-b border-zinc-800 pb-3 flex items-center gap-2">
+            <Calendar className="w-4 h-4" /> Planificación de Calendario Temporal y Distribución de Campos
           </h3>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4">
-            <div className="flex flex-col gap-1">
-              <label className="font-header font-black text-[10px] uppercase text-zinc-450 tracking-wider">Fecha de Inicio</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
-              />
-            </div>
-            
-            <div className="flex flex-col gap-1">
-              <label className="font-header font-black text-[10px] uppercase text-zinc-450 tracking-wider">Hora de Inicio</label>
-              <input
-                type="time"
-                value={startTime}
-                onChange={(e) => setStartTime(e.target.value)}
-                className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
-              />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* DÍA 1: FASE DE GRUPOS */}
+            <div className="flex flex-col gap-4 bg-zinc-900/20 p-4 border border-zinc-850/70">
+              <h4 className="font-header font-black text-xs uppercase tracking-widest text-white border-b border-zinc-850 pb-2 mb-1 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-yellow-400 rounded-none"></span> DÍA 1: FASE DE GRUPOS
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Fecha</label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Hora Inicio</label>
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Campos</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={numFields}
+                    onChange={(e) => setNumFields(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Duración (min)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="180"
+                    value={matchDuration}
+                    onChange={(e) => setMatchDuration(Math.max(5, parseInt(e.target.value, 10) || 5))}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Descanso (min)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={breakDuration}
+                    onChange={(e) => setBreakDuration(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+              </div>
             </div>
 
-            <div className="flex flex-col gap-1">
-              <label className="font-header font-black text-[10px] uppercase text-zinc-450 tracking-wider">Duración Partido (min)</label>
-              <input
-                type="number"
-                min="5"
-                max="180"
-                value={matchDuration}
-                onChange={(e) => setMatchDuration(Math.max(5, parseInt(e.target.value, 10) || 5))}
-                className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="font-header font-black text-[10px] uppercase text-zinc-450 tracking-wider">Descanso (min)</label>
-              <input
-                type="number"
-                min="0"
-                max="60"
-                value={breakDuration}
-                onChange={(e) => setBreakDuration(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
-              />
-            </div>
-
-            <div className="flex flex-col gap-1">
-              <label className="font-header font-black text-[10px] uppercase text-zinc-450 tracking-wider">Número de Campos</label>
-              <input
-                type="number"
-                min="1"
-                max="10"
-                value={numFields}
-                onChange={(e) => setNumFields(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
-              />
+            {/* DÍA 2: FASE FINAL / CRUCES */}
+            <div className="flex flex-col gap-4 bg-zinc-900/20 p-4 border border-zinc-850/70">
+              <h4 className="font-header font-black text-xs uppercase tracking-widest text-yellow-400 border-b border-zinc-850 pb-2 mb-1 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-yellow-400 rounded-none"></span> DÍA 2: FASE FINAL / CRUCES
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Fecha</label>
+                  <input
+                    type="date"
+                    value={bracketStartDate}
+                    onChange={(e) => setBracketStartDate(e.target.value)}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Hora Inicio</label>
+                  <input
+                    type="time"
+                    value={bracketStartTime}
+                    onChange={(e) => setBracketStartTime(e.target.value)}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Campos</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="10"
+                    value={bracketNumFields}
+                    onChange={(e) => setBracketNumFields(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Duración (min)</label>
+                  <input
+                    type="number"
+                    min="5"
+                    max="180"
+                    value={bracketMatchDuration}
+                    onChange={(e) => setBracketMatchDuration(Math.max(5, parseInt(e.target.value, 10) || 5))}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="font-header font-black text-[9px] uppercase text-zinc-450 tracking-wider">Descanso (min)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="60"
+                    value={bracketBreakDuration}
+                    onChange={(e) => setBracketBreakDuration(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                    className="h-9 px-3 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:ring-1 focus:ring-yellow-400 focus:outline-none"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Panel de Previsualización */}
-          <div className="bg-zinc-900/30 border border-zinc-850 p-3 flex flex-col gap-2">
-            <span className="font-header font-black text-[9px] uppercase tracking-wider text-zinc-500">
-              Vista previa de asignación de campos y franjas horarias:
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {groupNames.map((name, gIdx) => {
-                const info = getGroupScheduleInfo(gIdx);
-                return (
-                  <div key={gIdx} className="bg-zinc-950 p-2.5 border border-zinc-850 flex flex-col gap-1">
-                    <div className="flex justify-between items-center border-b border-zinc-850 pb-1 mb-1">
-                      <span className="font-header font-black text-[10px] text-white uppercase">{name}</span>
-                      <span className="font-header font-black text-[9px] text-yellow-400 uppercase bg-yellow-400/10 px-1 border border-yellow-400/20">{info.fieldName}</span>
-                    </div>
-                    <div className="flex flex-col text-[10px] font-mono text-zinc-400">
-                      <div className="flex justify-between">
-                        <span>Horario:</span>
-                        <span className="font-bold text-zinc-200">{info.startTimeStr} - {info.endTimeStr}</span>
+          {/* Panel de Previsualización Doble */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+            {/* Previsualización Fase de Grupos */}
+            <div className="bg-zinc-900/40 border border-zinc-850 p-4 flex flex-col gap-3">
+              <span className="font-header font-black text-[10px] uppercase tracking-wider text-zinc-400 border-b border-zinc-850 pb-1">
+                VISTA PREVIA: FASE DE GRUPOS (DÍA 1)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto pr-1">
+                {groupNames.map((name, gIdx) => {
+                  const info = getGroupScheduleInfo(gIdx);
+                  return (
+                    <div key={gIdx} className="bg-zinc-950 p-2.5 border border-zinc-850/60 flex flex-col gap-1">
+                      <div className="flex justify-between items-center border-b border-zinc-900 pb-1 mb-0.5">
+                        <span className="font-header font-black text-[9px] text-white uppercase">{name}</span>
+                        <span className="font-header font-black text-[8px] text-yellow-400 uppercase bg-yellow-400/5 px-1 border border-yellow-400/10">{info.fieldName}</span>
                       </div>
-                      <div className="flex justify-between mt-0.5">
-                        <span>Partidos:</span>
-                        <span className="font-bold text-zinc-200">{info.matchesCount}</span>
+                      <div className="flex flex-col text-[9px] font-mono text-zinc-400">
+                        <div className="flex justify-between">
+                          <span>Horario:</span>
+                          <span className="font-bold text-zinc-200">{info.startTimeStr} - {info.endTimeStr}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Partidos:</span>
+                          <span className="font-bold text-zinc-200">{info.matchesCount}</span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Previsualización Fase Final */}
+            <div className="bg-zinc-900/40 border border-zinc-850 p-4 flex flex-col gap-3">
+              <span className="font-header font-black text-[10px] uppercase tracking-wider text-yellow-400 border-b border-zinc-850 pb-1">
+                VISTA PREVIA: FASE FINAL / CRUCES (DÍA 2)
+              </span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-48 overflow-y-auto pr-1">
+                {getBracketSchedulePreview().length > 0 ? (
+                  getBracketSchedulePreview().map((round, rIdx) => (
+                    <div key={rIdx} className="bg-zinc-950 p-2.5 border border-zinc-850/60 flex flex-col gap-1">
+                      <div className="flex justify-between items-center border-b border-zinc-900 pb-1 mb-0.5">
+                        <span className="font-header font-black text-[9px] text-white uppercase truncate max-w-[120px]">{round.name}</span>
+                        <span className="font-header font-black text-[8px] text-yellow-400 uppercase bg-yellow-400/5 px-1 border border-yellow-400/10">Ronda</span>
+                      </div>
+                      <div className="flex flex-col text-[9px] font-mono text-zinc-400">
+                        <div className="flex justify-between">
+                          <span>Horario:</span>
+                          <span className="font-bold text-zinc-200">{round.startTimeStr.split(' ')[1]} - {round.endTimeStr.split(' ')[1]}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Fecha:</span>
+                          <span className="font-bold text-zinc-200">{round.startTimeStr.split(' ')[0]}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Partidos:</span>
+                          <span className="font-bold text-zinc-200">{round.matchesCount}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <span className="text-[10px] text-zinc-500 italic p-2">Configura más de 1 equipo para ver el preview de cruces.</span>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -725,20 +1018,28 @@ export default function GroupStage({
                                   className="flex flex-col bg-zinc-950 border border-zinc-850 rounded-none hover:border-zinc-700 hover:bg-zinc-900 transition-all p-3 gap-2"
                                 >
                                   {/* Cabecera de Horario y Campo */}
-                                  {(match.fechaHora || match.pistaCampo) && (
-                                    <div className="flex justify-between items-center text-[9px] text-zinc-500 border-b border-zinc-900/60 pb-1.5 mb-0.5">
-                                      <span className="flex items-center gap-1 font-mono">
-                                        <Calendar className="w-2.5 h-2.5 text-zinc-650" />
-                                        {match.fechaHora 
-                                          ? new Date(match.fechaHora).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                                          : 'Sin programar'}
-                                      </span>
-                                      <span className="flex items-center gap-1 font-bold text-yellow-400/70">
-                                        <MapPin className="w-2.5 h-2.5 text-zinc-650" />
-                                        {match.pistaCampo || 'TBD'}
-                                      </span>
+                                  {/* Cabecera de Horario y Campo Editable */}
+                                  <div className="flex justify-between items-center text-[10px] border-b border-zinc-900/60 pb-2 mb-1.5 gap-2">
+                                    <div className="flex items-center gap-1.5 w-7/12">
+                                      <Calendar className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+                                      <input
+                                        type="datetime-local"
+                                        value={match.fechaHora || ''}
+                                        onChange={(e) => handleMatchScheduleChange(group.id, match.id, 'fechaHora', e.target.value)}
+                                        className="bg-transparent hover:bg-zinc-900 focus:bg-zinc-900 border border-transparent hover:border-zinc-800 focus:border-yellow-400/40 text-[11px] text-yellow-450 font-mono font-black px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-pointer"
+                                      />
                                     </div>
-                                  )}
+                                    <div className="flex items-center gap-1.5 w-5/12 justify-end">
+                                      <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+                                      <input
+                                        type="text"
+                                        value={match.pistaCampo || ''}
+                                        placeholder="CAMPO/PISTA"
+                                        onChange={(e) => handleMatchScheduleChange(group.id, match.id, 'pistaCampo', e.target.value)}
+                                        className="bg-transparent hover:bg-zinc-900 focus:bg-zinc-900 border border-transparent hover:border-zinc-800 focus:border-yellow-400/40 text-[10px] text-zinc-200 font-header font-black uppercase text-right px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-text"
+                                      />
+                                    </div>
+                                  </div>
 
                                   {/* Contenido del Partido (Equipos y Goles) */}
                                   <div className="flex items-center justify-between">

@@ -79,3 +79,31 @@ export interface MatchStats {
   scorers: PlayerStats[];
   goalkeepers: GoalkeeperStats[];
 }
+
+export interface SavedTournament {
+  id: string;
+  name: string;
+  sport: string;
+  logoUrl: string;
+  lastModified: string; // ISO string
+  config: {
+    tournamentName: string;
+    sport: string;
+    logoUrl: string;
+    theme: {
+      primaryColor: string;
+      secondaryColor: string;
+      backgroundColor: string;
+      textColor: string;
+      cardBackgroundColor: string;
+      fontFamilyHeader: string;
+      fontFamilyData: string;
+    };
+  };
+  registeredTeams: Team[];
+  groups: Group[];
+  knockoutMatches: Match[];
+  matchStats: Record<string, MatchStats>;
+  activeTab: 'teamsRegister' | 'registration' | 'groupStage' | 'bracket' | 'stats';
+}
+

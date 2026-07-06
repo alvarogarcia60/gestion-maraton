@@ -90,7 +90,7 @@ export default function BracketTree({ matches, setMatches, teams }: BracketTreeP
   }
 
   // Componente de Tarjeta de Partido Reutilizable con Conectores
-  const MatchCard = ({ match, side }: { match: Match; side: 'left' | 'right' | 'center' }) => {
+  const renderMatchCard = (match: Match, side: 'left' | 'right' | 'center') => {
     const home = getTeamById(match.homeTeamId);
     const away = getTeamById(match.awayTeamId);
     
@@ -130,58 +130,28 @@ export default function BracketTree({ matches, setMatches, teams }: BracketTreeP
           </>
         )}
 
-        {/* Programador de Fecha/Pista */}
-        {!isEditing && (
-          <div className="flex justify-between items-center text-[9px] text-zinc-500 border-b border-zinc-850/50 pb-1.5 mb-1">
-            <span className="flex items-center gap-1 font-mono">
-              <Calendar className="w-2.5 h-2.5 text-zinc-650" />
-              {match.fechaHora 
-                ? new Date(match.fechaHora).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                : 'Sin programar'}
-            </span>
-            <span className="flex items-center gap-1 font-bold text-yellow-400/70">
-              <MapPin className="w-2.5 h-2.5 text-zinc-650" />
-              {match.pistaCampo || 'TBD'}
-            </span>
-            
-            <button
-              onClick={() => setEditingMatchId(match.id)}
-              className="text-[8px] text-zinc-600 hover:text-yellow-400 font-header font-black tracking-wider uppercase transition-colors ml-2 no-print cursor-pointer"
-            >
-              Editar
-            </button>
+        {/* Cabecera de Horario y Campo Editable en Cuadro */}
+        <div className="flex justify-between items-center text-[10px] border-b border-zinc-850/50 pb-2 mb-1.5 gap-2">
+          <div className="flex items-center gap-1.5 w-7/12">
+            <Calendar className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
+            <input
+              type="datetime-local"
+              value={match.fechaHora || ''}
+              onChange={(e) => handleScheduleChange(match.id, 'fechaHora', e.target.value)}
+              className="bg-transparent hover:bg-zinc-950 focus:bg-zinc-950 border border-transparent hover:border-zinc-850 focus:border-yellow-400/40 text-[11px] text-yellow-450 font-mono font-black px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-pointer"
+            />
           </div>
-        )}
-
-        {isEditing ? (
-          <div className="flex flex-col gap-2 p-2 bg-zinc-950 border border-zinc-850">
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[8px] uppercase text-zinc-500 font-header font-bold tracking-wider">Fecha y Hora</label>
-              <input
-                type="datetime-local"
-                value={match.fechaHora || ''}
-                onChange={(e) => handleScheduleChange(match.id, 'fechaHora', e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 text-[10px] text-white p-1 focus:ring-1 focus:ring-yellow-400 focus:outline-none"
-              />
-            </div>
-            <div className="flex flex-col gap-0.5">
-              <label className="text-[8px] uppercase text-zinc-500 font-header font-bold tracking-wider">Pista / Campo</label>
-              <input
-                type="text"
-                placeholder="Ej. Campo A"
-                value={match.pistaCampo || ''}
-                onChange={(e) => handleScheduleChange(match.id, 'pistaCampo', e.target.value)}
-                className="w-full bg-zinc-900 border border-zinc-800 text-[10px] text-white p-1 focus:ring-1 focus:ring-yellow-400 focus:outline-none"
-              />
-            </div>
-            <button
-              onClick={() => setEditingMatchId(null)}
-              className="w-full py-1 bg-yellow-400 hover:bg-yellow-350 text-black font-header font-black text-[9px] uppercase tracking-wider transition-colors mt-1 cursor-pointer"
-            >
-              Confirmar
-            </button>
+          <div className="flex items-center gap-1.5 w-5/12 justify-end">
+            <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
+            <input
+              type="text"
+              value={match.pistaCampo || ''}
+              placeholder="CAMPO/PISTA"
+              onChange={(e) => handleScheduleChange(match.id, 'pistaCampo', e.target.value)}
+              className="bg-transparent hover:bg-zinc-950 focus:bg-zinc-950 border border-transparent hover:border-zinc-850 focus:border-yellow-400/40 text-[10px] text-zinc-200 font-header font-black uppercase text-right px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-text"
+            />
           </div>
-        ) : (
+        </div>
           <div className="flex flex-col gap-2.5">
             {/* Local */}
             <div className="flex items-center justify-between">
@@ -240,7 +210,6 @@ export default function BracketTree({ matches, setMatches, teams }: BracketTreeP
               )}
             </div>
           </div>
-        )}
       </div>
     );
   };
@@ -329,7 +298,9 @@ export default function BracketTree({ matches, setMatches, teams }: BracketTreeP
                   </h3>
                   <div className="flex flex-col gap-8 justify-around h-full py-2 items-center">
                     {leftMatches.map((match) => (
-                      <MatchCard key={match.id} match={match} side="left" />
+                      <React.Fragment key={match.id}>
+                        {renderMatchCard(match, 'left')}
+                      </React.Fragment>
                     ))}
                   </div>
                 </div>
@@ -344,7 +315,7 @@ export default function BracketTree({ matches, setMatches, teams }: BracketTreeP
                 <h3 className="font-header font-black text-[11px] tracking-widest text-yellow-400 text-center uppercase border-b border-zinc-900 pb-2 w-full">
                   GRAN FINAL
                 </h3>
-                <MatchCard match={finalMatch} side="center" />
+                {renderMatchCard(finalMatch, 'center')}
               </div>
             )}
             
@@ -394,7 +365,9 @@ export default function BracketTree({ matches, setMatches, teams }: BracketTreeP
                   </h3>
                   <div className="flex flex-col gap-8 justify-around h-full py-2 items-center">
                     {rightMatches.map((match) => (
-                      <MatchCard key={match.id} match={match} side="right" />
+                      <React.Fragment key={match.id}>
+                        {renderMatchCard(match, 'right')}
+                      </React.Fragment>
                     ))}
                   </div>
                 </div>
