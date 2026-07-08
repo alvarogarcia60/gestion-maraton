@@ -10,7 +10,7 @@ import TeamsRegister from '@/components/TeamsRegister';
 import StatsPanel from '@/components/StatsPanel';
 import { MOCK_TEAMS, getInitialGroups, getInitialKnockoutMatches, calculateStandings } from '@/utils/competition';
 import { Group, Match, Team, MatchStats, SavedTournament } from '@/types';
-import { ClipboardList, Users, GitMerge, Settings, Play, ShieldAlert, Award, BarChart3, Save, LogOut, Trash2, FolderOpen, PlusCircle, Calendar, ArrowLeft } from 'lucide-react';
+import { ClipboardList, Users, GitMerge, Settings, Play, ShieldAlert, Award, BarChart3, Save, LogOut, Trash2, FolderOpen, PlusCircle, Calendar, ArrowLeft, Loader2 } from 'lucide-react';
 
 const PRESETS = [
   {
@@ -100,6 +100,8 @@ export default function Home() {
   const [view, setView] = useState<'list' | 'create'>('list');
   const [showExitModal, setShowExitModal] = useState<boolean>(false);
   const [saveToast, setSaveToast] = useState<{ show: boolean; message: string }>({ show: false, message: "" });
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [dbError, setDbError] = useState<string | null>(null);
 
   // Helper para dar formato legible a la fecha
   const formatLastModified = (isoString: string): string => {
@@ -120,60 +122,84 @@ export default function Home() {
     }
   };
 
-  // Cargar de localStorage al montar el componente
+  // Cargar de MongoDB y localStorage al montar el componente
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      // 1. Cargar lista de torneos guardados
-      const rawSavedTournaments = localStorage.getItem('saved_tournaments');
-      let parsedSaved: SavedTournament[] = [];
-      if (rawSavedTournaments) {
-        try {
-          parsedSaved = JSON.parse(rawSavedTournaments);
-          setSavedTournaments(parsedSaved);
-        } catch (e) {
-          console.error("Error parsing saved_tournaments:", e);
+    async function loadTournaments() {
+      setIsLoading(true);
+      setDbError(null);
+      let loadedTournaments: SavedTournament[] = [];
+
+      try {
+        const response = await fetch('/api/tournaments');
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'Error al conectar con la base de datos');
         }
+        loadedTournaments = await response.json();
+        setSavedTournaments(loadedTournaments);
+      } catch (err: any) {
+        console.error("Error al cargar torneos de MongoDB:", err);
+        setDbError(err.message || 'No se pudieron cargar los torneos de la base de datos.');
+
+        // Fallback a localStorage si MongoDB falla
+        if (typeof window !== 'undefined') {
+          const rawSavedTournaments = localStorage.getItem('saved_tournaments');
+          if (rawSavedTournaments) {
+            try {
+              loadedTournaments = JSON.parse(rawSavedTournaments);
+              setSavedTournaments(loadedTournaments);
+            } catch (e) {
+              console.error("Error parsing saved_tournaments fallback:", e);
+            }
+          }
+        }
+      } finally {
+        setIsLoading(false);
       }
 
-      // 2. Cargar el id del torneo actual y verificar si está activo
-      const savedCurrentId = localStorage.getItem('current_tournament_id');
-      const savedActive = localStorage.getItem('tournament_active');
+      // 2. Cargar el id del torneo actual y verificar si está activo (manteniendo la sesión local del navegador)
+      if (typeof window !== 'undefined') {
+        const savedCurrentId = localStorage.getItem('current_tournament_id');
+        const savedActive = localStorage.getItem('tournament_active');
 
-      if (savedActive === 'true' && savedCurrentId) {
-        // Encontrar el torneo en la lista guardada
-        const currentTournament = parsedSaved.find(t => t.id === savedCurrentId);
-        if (currentTournament) {
-          setCurrentTournamentId(savedCurrentId);
-          setRegisteredTeams(currentTournament.registeredTeams || []);
-          setGroups(currentTournament.groups || []);
-          setKnockoutMatches(currentTournament.knockoutMatches || []);
-          setMatchStats(currentTournament.matchStats || {});
-          setActiveTab(currentTournament.activeTab || 'teamsRegister');
-          setIsTournamentActive(true);
-          setTournamentConfig(currentTournament.config);
-        } else {
-          // Fallback legacy a las variables individuales de localStorage
-          const savedTeams = localStorage.getItem('tournament_teams');
-          const savedGroups = localStorage.getItem('tournament_groups');
-          const savedKnockout = localStorage.getItem('tournament_knockout');
-          const savedStats = localStorage.getItem('tournament_stats');
-          
-          if (savedTeams) {
-            try { setRegisteredTeams(JSON.parse(savedTeams)); } catch (e) { console.error(e); }
+        if (savedActive === 'true' && savedCurrentId) {
+          // Intentar encontrar el torneo en la lista cargada (nube o fallback local)
+          const currentTournament = loadedTournaments.find(t => t.id === savedCurrentId);
+          if (currentTournament) {
+            setCurrentTournamentId(savedCurrentId);
+            setRegisteredTeams(currentTournament.registeredTeams || []);
+            setGroups(currentTournament.groups || []);
+            setKnockoutMatches(currentTournament.knockoutMatches || []);
+            setMatchStats(currentTournament.matchStats || {});
+            setActiveTab(currentTournament.activeTab || 'teamsRegister');
+            setIsTournamentActive(true);
+            setTournamentConfig(currentTournament.config);
+          } else {
+            // Fallback legacy a las variables individuales de localStorage
+            const savedTeams = localStorage.getItem('tournament_teams');
+            const savedGroups = localStorage.getItem('tournament_groups');
+            const savedKnockout = localStorage.getItem('tournament_knockout');
+            const savedStats = localStorage.getItem('tournament_stats');
+
+            if (savedTeams) {
+              try { setRegisteredTeams(JSON.parse(savedTeams)); } catch (e) { console.error(e); }
+            }
+            if (savedGroups) {
+              try { setGroups(JSON.parse(savedGroups)); } catch (e) { console.error(e); }
+            }
+            if (savedKnockout) {
+              try { setKnockoutMatches(JSON.parse(savedKnockout)); } catch (e) { console.error(e); }
+            }
+            if (savedStats) {
+              try { setMatchStats(JSON.parse(savedStats)); } catch (e) { console.error(e); }
+            }
+            setIsTournamentActive(true);
           }
-          if (savedGroups) {
-            try { setGroups(JSON.parse(savedGroups)); } catch (e) { console.error(e); }
-          }
-          if (savedKnockout) {
-            try { setKnockoutMatches(JSON.parse(savedKnockout)); } catch (e) { console.error(e); }
-          }
-          if (savedStats) {
-            try { setMatchStats(JSON.parse(savedStats)); } catch (e) { console.error(e); }
-          }
-          setIsTournamentActive(true);
         }
       }
     }
+
+    loadTournaments();
   }, []);
 
   // Guardar en localStorage ante cambios en los estados principales
@@ -220,35 +246,60 @@ export default function Home() {
     }
   }, [registeredTeams, groups, knockoutMatches, matchStats, activeTab, config, currentTournamentId, isTournamentActive, savedTournaments]);
 
-  // Manejar el guardado explícito
-  const handleSaveTournament = () => {
+  // Manejar el guardado explícito en local y en MongoDB
+  const handleSaveTournament = async () => {
     if (!currentTournamentId) return;
+
+    const targetTournament = {
+      id: currentTournamentId,
+      name: config.tournamentName,
+      sport: config.sport,
+      logoUrl: config.logoUrl,
+      lastModified: new Date().toISOString(),
+      config: config,
+      registeredTeams,
+      groups,
+      knockoutMatches,
+      matchStats,
+      activeTab
+    };
 
     const updated = savedTournaments.map(t => {
       if (t.id === currentTournamentId) {
-        return {
-          ...t,
-          name: config.tournamentName,
-          sport: config.sport,
-          logoUrl: config.logoUrl,
-          lastModified: new Date().toISOString(),
-          config: config,
-          registeredTeams,
-          groups,
-          knockoutMatches,
-          matchStats,
-          activeTab
-        };
+        return targetTournament;
       }
       return t;
     });
 
+    // Actualización local rápida
     setSavedTournaments(updated);
-    localStorage.setItem('saved_tournaments', JSON.stringify(updated));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('saved_tournaments', JSON.stringify(updated));
+    }
 
-    // Toast de éxito
-    setSaveToast({ show: true, message: "¡Torneo guardado correctamente!" });
-    setTimeout(() => setSaveToast({ show: false, message: "" }), 3000);
+    // Guardado en la base de datos de MongoDB
+    try {
+      const response = await fetch('/api/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(targetTournament),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'No se pudo guardar en MongoDB');
+      }
+
+      setSaveToast({ show: true, message: "¡Torneo guardado correctamente en la nube!" });
+    } catch (err: any) {
+      console.error("Error al guardar torneo en MongoDB:", err);
+      setSaveToast({ 
+        show: true, 
+        message: `¡Guardado en local! (Error en la nube: ${err.message || 'Sin conexión'})` 
+      });
+    }
+
+    setTimeout(() => setSaveToast({ show: false, message: "" }), 4000);
   };
 
   // Manejar la salida del torneo
@@ -275,19 +326,38 @@ export default function Home() {
     setView('list');
   };
 
-  // Manejar la eliminación del torneo
-  const handleDeleteTournament = (id: string, name: string) => {
+  // Manejar la eliminación del torneo en local y en MongoDB
+  const handleDeleteTournament = async (id: string, name: string) => {
     if (confirm(`¿Estás seguro de que deseas eliminar el torneo "${name}" permanentemente? Se perderán todos sus datos.`)) {
+      // Filtrar localmente
       const updated = savedTournaments.filter(t => t.id !== id);
       setSavedTournaments(updated);
-      localStorage.setItem('saved_tournaments', JSON.stringify(updated));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('saved_tournaments', JSON.stringify(updated));
+      }
 
       if (currentTournamentId === id) {
         setIsTournamentActive(false);
         setCurrentTournamentId(null);
-        localStorage.setItem('tournament_active', 'false');
-        localStorage.removeItem('current_tournament_id');
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('tournament_active', 'false');
+          localStorage.removeItem('current_tournament_id');
+        }
         setView('list');
+      }
+
+      // Eliminar de MongoDB
+      try {
+        const response = await fetch(`/api/tournaments?id=${id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.error || 'No se pudo eliminar de MongoDB');
+        }
+      } catch (err: any) {
+        console.error("Error al eliminar torneo de MongoDB:", err);
+        alert(`Se eliminó localmente pero falló en la nube: ${err.message || 'Sin conexión'}`);
       }
     }
   };
@@ -309,7 +379,7 @@ export default function Home() {
     localStorage.setItem('tournament_active', 'true');
   };
 
-  const handleCreateTournament = (e: React.FormEvent) => {
+  const handleCreateTournament = async (e: React.FormEvent) => {
     e.preventDefault();
 
     const preset = PRESETS[selectedPresetIdx];
@@ -349,7 +419,9 @@ export default function Home() {
 
     const updatedTournaments = [...savedTournaments, newTournament];
     setSavedTournaments(updatedTournaments);
-    localStorage.setItem('saved_tournaments', JSON.stringify(updatedTournaments));
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('saved_tournaments', JSON.stringify(updatedTournaments));
+    }
 
     setRegisteredTeams(initialTeams);
     setGroups(initialGroups);
@@ -357,9 +429,31 @@ export default function Home() {
     setMatchStats({});
     setCurrentTournamentId(newId);
     setIsTournamentActive(true);
-    localStorage.setItem('current_tournament_id', newId);
-    localStorage.setItem('tournament_active', 'true');
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('current_tournament_id', newId);
+      localStorage.setItem('tournament_active', 'true');
+    }
     setActiveTab('teamsRegister');
+
+    // Guardar el nuevo torneo en MongoDB
+    try {
+      const response = await fetch('/api/tournaments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTournament),
+      });
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error || 'No se pudo registrar en MongoDB');
+      }
+    } catch (err: any) {
+      console.error("Error al registrar nuevo torneo en MongoDB:", err);
+      setSaveToast({ 
+        show: true, 
+        message: `¡Creado localmente! (Error al subir: ${err.message || 'Sin conexión'})` 
+      });
+      setTimeout(() => setSaveToast({ show: false, message: "" }), 4000);
+    }
 
     // Resetear campos del formulario
     setNewTName("CYBER ARENA F7");
@@ -750,91 +844,111 @@ export default function Home() {
                 </button>
               </div>
 
-              {/* Lista en Rejilla */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {/* Botón "+ Nuevo Torneo" en tarjeta */}
-                <div
-                  onClick={() => setView('create')}
-                  className="bg-zinc-950/40 border-2 border-dashed border-zinc-850 hover:border-yellow-400/50 hover:bg-zinc-900/20 p-8 flex flex-col items-center justify-center min-h-[220px] transition-all duration-300 cursor-pointer text-center group"
-                >
-                  <div className="w-12 h-12 rounded-full border border-zinc-850 flex items-center justify-center text-zinc-500 group-hover:text-yellow-400 group-hover:border-yellow-400/30 transition-all text-xl mb-3">
-                    +
-                  </div>
-                  <span className="font-header font-black text-sm uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors">
-                    Crear Nuevo Torneo
+              {dbError && (
+                <div className="bg-rose-500/10 border border-rose-500/20 p-4 text-xs font-semibold text-rose-400 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-rose-500" />
+                  <span>
+                    Modo Local Temporal Activo: {dbError}. Los cambios se guardarán en tu navegador, pero no se compartirán en la nube hasta solucionar la conexión.
                   </span>
-                  <p className="text-[10px] text-zinc-500 mt-1 max-w-[200px] leading-normal font-sans">
-                    Configura un nuevo torneo desde cero o carga datos de demostración para probar.
+                </div>
+              )}
+
+              {/* Lista en Rejilla */}
+              {isLoading ? (
+                <div className="py-20 text-center flex flex-col items-center justify-center border border-zinc-850 bg-zinc-900/10">
+                  <Loader2 className="w-8 h-8 animate-spin text-yellow-400 mb-3" />
+                  <p className="font-header font-black text-xs uppercase tracking-widest text-zinc-400">
+                    Cargando Torneos desde la Nube...
                   </p>
                 </div>
-
-                {/* Torneos Guardados */}
-                {savedTournaments.map((tournament) => (
-                  <div
-                    key={tournament.id}
-                    className="bg-zinc-900 border border-zinc-850 hover:border-yellow-400/40 p-6 flex flex-col justify-between min-h-[220px] transition-all duration-300 relative group shadow-xl"
-                  >
-                    {/* Botón Eliminar en la esquina superior derecha */}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTournament(tournament.id, tournament.name);
-                      }}
-                      className="absolute top-4 right-4 text-zinc-500 hover:text-red-400 p-1.5 transition-colors cursor-pointer"
-                      title="Eliminar Torneo"
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Botón "+ Nuevo Torneo" en tarjeta */}
+                    <div
+                      onClick={() => setView('create')}
+                      className="bg-zinc-950/40 border-2 border-dashed border-zinc-850 hover:border-yellow-400/50 hover:bg-zinc-900/20 p-8 flex flex-col items-center justify-center min-h-[220px] transition-all duration-300 cursor-pointer text-center group"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-
-                    {/* Contenido Superior */}
-                    <div className="flex gap-4 items-start w-11/12">
-                      <div className="w-14 h-14 bg-zinc-950 border border-zinc-800 flex items-center justify-center text-3xl group-hover:scale-105 transition-transform shrink-0">
-                        {tournament.logoUrl}
+                      <div className="w-12 h-12 rounded-full border border-zinc-850 flex items-center justify-center text-zinc-500 group-hover:text-yellow-400 group-hover:border-yellow-400/30 transition-all text-xl mb-3">
+                        +
                       </div>
-                      <div className="truncate">
-                        <span className="inline-block text-[9px] font-header font-black tracking-wider text-yellow-400 uppercase">
-                          {tournament.sport}
-                        </span>
-                        <h3 className="font-header font-black text-lg text-white uppercase tracking-tight mt-0.5 truncate group-hover:text-yellow-400 transition-colors">
-                          {tournament.name}
-                        </h3>
-                      </div>
+                      <span className="font-header font-black text-sm uppercase tracking-wider text-zinc-400 group-hover:text-white transition-colors">
+                        Crear Nuevo Torneo
+                      </span>
+                      <p className="text-[10px] text-zinc-500 mt-1 max-w-[200px] leading-normal font-sans">
+                        Configura un nuevo torneo desde cero o carga datos de demostración para probar.
+                      </p>
                     </div>
 
-                    {/* Metadata y Botón de Entrada */}
-                    <div className="mt-6 flex flex-col justify-between">
-                      <div className="flex flex-col gap-1 text-[10px] text-zinc-500 font-sans border-t border-zinc-850/50 pt-3 mb-4">
-                        <div className="flex items-center gap-1.5">
-                          <Users className="w-3.5 h-3.5 text-zinc-650" />
-                          <span>{tournament.registeredTeams?.length || 0} Equipos Registrados</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 mt-1">
-                          <Calendar className="w-3.5 h-3.5 text-zinc-650" />
-                          <span>Modificado: {formatLastModified(tournament.lastModified)}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        onClick={() => handleLoadTournament(tournament.id)}
-                        className="w-full py-2.5 bg-yellow-400 text-black hover:bg-yellow-500 font-header font-black uppercase text-xs tracking-wider transition-all cursor-pointer text-center"
+                    {/* Torneos Guardados */}
+                    {savedTournaments.map((tournament) => (
+                      <div
+                        key={tournament.id}
+                        className="bg-zinc-900 border border-zinc-850 hover:border-yellow-400/40 p-6 flex flex-col justify-between min-h-[220px] transition-all duration-300 relative group shadow-xl"
                       >
-                        Entrar al Panel &rarr;
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                        {/* Botón Eliminar en la esquina superior derecha */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTournament(tournament.id, tournament.name);
+                          }}
+                          className="absolute top-4 right-4 text-zinc-500 hover:text-red-400 p-1.5 transition-colors cursor-pointer"
+                          title="Eliminar Torneo"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
 
-              {savedTournaments.length === 0 && (
-                <div className="py-16 text-center border border-dashed border-zinc-850 bg-zinc-900/10 max-w-lg mx-auto w-full mt-6">
-                  <FolderOpen className="w-8 h-8 text-zinc-500 mx-auto mb-3" />
-                  <p className="font-header font-black text-sm uppercase tracking-wider text-zinc-400">
-                    No tienes torneos guardados
-                  </p>
-                  <p className="text-[10px] text-zinc-500 font-sans mt-1 max-w-xs mx-auto">
-                    ¡Comienza ahora! Haz clic en el botón de arriba para crear y configurar tu primera competición.
-                  </p>
-                </div>
+                        {/* Contenido Superior */}
+                        <div className="flex gap-4 items-start w-11/12">
+                          <div className="w-14 h-14 bg-zinc-950 border border-zinc-800 flex items-center justify-center text-3xl group-hover:scale-105 transition-transform shrink-0">
+                            {tournament.logoUrl}
+                          </div>
+                          <div className="truncate">
+                            <span className="inline-block text-[9px] font-header font-black tracking-wider text-yellow-400 uppercase">
+                              {tournament.sport}
+                            </span>
+                            <h3 className="font-header font-black text-lg text-white uppercase tracking-tight mt-0.5 truncate group-hover:text-yellow-400 transition-colors">
+                              {tournament.name}
+                            </h3>
+                          </div>
+                        </div>
+
+                        {/* Metadata y Botón de Entrada */}
+                        <div className="mt-6 flex flex-col justify-between">
+                          <div className="flex flex-col gap-1 text-[10px] text-zinc-500 font-sans border-t border-zinc-850/50 pt-3 mb-4">
+                            <div className="flex items-center gap-1.5">
+                              <Users className="w-3.5 h-3.5 text-zinc-650" />
+                              <span>{tournament.registeredTeams?.length || 0} Equipos Registrados</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 mt-1">
+                              <Calendar className="w-3.5 h-3.5 text-zinc-650" />
+                              <span>Modificado: {formatLastModified(tournament.lastModified)}</span>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleLoadTournament(tournament.id)}
+                            className="w-full py-2.5 bg-yellow-400 text-black hover:bg-yellow-500 font-header font-black uppercase text-xs tracking-wider transition-all cursor-pointer text-center"
+                          >
+                            Entrar al Panel &rarr;
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {savedTournaments.length === 0 && (
+                    <div className="py-16 text-center border border-dashed border-zinc-850 bg-zinc-900/10 max-w-lg mx-auto w-full mt-6">
+                      <FolderOpen className="w-8 h-8 text-zinc-500 mx-auto mb-3" />
+                      <p className="font-header font-black text-sm uppercase tracking-wider text-zinc-400">
+                        No tienes torneos guardados
+                      </p>
+                      <p className="text-[10px] text-zinc-500 font-sans mt-1 max-w-xs mx-auto">
+                        ¡Comienza ahora! Haz clic en el botón de arriba para crear y configurar tu primera competición.
+                      </p>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           ) : (

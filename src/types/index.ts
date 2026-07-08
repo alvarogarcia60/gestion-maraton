@@ -35,6 +35,8 @@ export interface Match {
   awayTeamId: string | null; // puede ser null si está por determinar
   homeScore?: number;
   awayScore?: number;
+  homePenalties?: number;
+  awayPenalties?: number;
   status: 'scheduled' | 'played' | 'postponed';
   scheduledTime?: string;
   fechaHora?: string; // Formato YYYY-MM-DDTHH:mm

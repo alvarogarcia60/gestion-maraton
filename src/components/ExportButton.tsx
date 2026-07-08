@@ -9,18 +9,30 @@ interface ExportButtonProps {
   elementRef: React.RefObject<HTMLDivElement | null>;
   fileName: string;
   backgroundColor?: string;
+  onBeforeExport?: () => void | Promise<void>;
+  onAfterExport?: () => void;
 }
 
 export default function ExportButton({ 
   elementRef, 
   fileName, 
-  backgroundColor = '#09090b' 
+  backgroundColor = '#09090b',
+  onBeforeExport,
+  onAfterExport
 }: ExportButtonProps) {
   const [loading, setLoading] = useState(false);
 
   const exportAsImage = async () => {
     if (!elementRef.current) return;
     setLoading(true);
+    
+    if (onBeforeExport) {
+      try {
+        await onBeforeExport();
+      } catch (err) {
+        console.error('Error in onBeforeExport:', err);
+      }
+    }
     
     // Guardar y remover placeholders temporalmente para que salgan vacíos en la imagen
     const inputs = elementRef.current.querySelectorAll('input, textarea');
@@ -60,6 +72,13 @@ export default function ExportButton({
       if (elementRef.current) {
         elementRef.current.classList.remove('export-mode');
       }
+      if (onAfterExport) {
+        try {
+          onAfterExport();
+        } catch (err) {
+          console.error('Error in onAfterExport:', err);
+        }
+      }
       setLoading(false);
     }
   };
@@ -67,6 +86,14 @@ export default function ExportButton({
   const exportAsPDF = async () => {
     if (!elementRef.current) return;
     setLoading(true);
+    
+    if (onBeforeExport) {
+      try {
+        await onBeforeExport();
+      } catch (err) {
+        console.error('Error in onBeforeExport:', err);
+      }
+    }
     
     // Guardar y remover placeholders temporalmente para que salgan vacíos en el PDF
     const inputs = elementRef.current.querySelectorAll('input, textarea');
@@ -110,6 +137,13 @@ export default function ExportButton({
       });
       if (elementRef.current) {
         elementRef.current.classList.remove('export-mode');
+      }
+      if (onAfterExport) {
+        try {
+          onAfterExport();
+        } catch (err) {
+          console.error('Error in onAfterExport:', err);
+        }
       }
       setLoading(false);
     }
