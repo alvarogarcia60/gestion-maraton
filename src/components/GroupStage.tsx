@@ -964,6 +964,19 @@ export default function GroupStage({
               .export-mode .no-print {
                 display: none !important;
               }
+              .export-mode *::-webkit-scrollbar {
+                display: none !important;
+                width: 0 !important;
+                height: 0 !important;
+              }
+              .export-mode * {
+                scrollbar-width: none !important;
+                -ms-overflow-style: none !important;
+              }
+              .export-mode .overflow-x-auto {
+                overflow: visible !important;
+                overflow-x: visible !important;
+              }
             `}</style>
             
             <div className="text-center border-b border-zinc-800 pb-6 relative z-10">

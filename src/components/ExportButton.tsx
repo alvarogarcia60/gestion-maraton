@@ -194,6 +194,21 @@ export default function ExportButton({
 
   return (
     <div className="flex gap-2 no-print font-header">
+      <style>{`
+        .export-mode *::-webkit-scrollbar {
+          display: none !important;
+          width: 0 !important;
+          height: 0 !important;
+        }
+        .export-mode * {
+          scrollbar-width: none !important;
+          -ms-overflow-style: none !important;
+        }
+        .export-mode .overflow-x-auto {
+          overflow: visible !important;
+          overflow-x: visible !important;
+        }
+      `}</style>
       <button
         onClick={exportAsImage}
         disabled={loading}
