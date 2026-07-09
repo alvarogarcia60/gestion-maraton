@@ -26,17 +26,21 @@ export default function StatsPanel({
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
 
   // Estados del editor de estadísticas de partido
+  const [homeScorerId, setHomeScorerId] = useState<string>("");
   const [customHomeScorer, setCustomHomeScorer] = useState<string>("");
   const [homeScorerGoals, setHomeScorerGoals] = useState<number>(1);
 
+  const [awayScorerId, setAwayScorerId] = useState<string>("");
   const [customAwayScorer, setCustomAwayScorer] = useState<string>("");
   const [awayScorerGoals, setAwayScorerGoals] = useState<number>(1);
 
   // Estados de porteros del partido
+  const [homeGkId, setHomeGkId] = useState<string>("");
   const [customHomeGoalkeeper, setCustomHomeGoalkeeper] = useState<string>("");
   const [homeGkConceded, setHomeGkConceded] = useState<number>(0);
   const [homeGkMatches, setHomeGkMatches] = useState<number>(1);
 
+  const [awayGkId, setAwayGkId] = useState<string>("");
   const [customAwayGoalkeeper, setCustomAwayGoalkeeper] = useState<string>("");
   const [awayGkConceded, setAwayGkConceded] = useState<number>(0);
   const [awayGkMatches, setAwayGkMatches] = useState<number>(1);
@@ -148,9 +152,11 @@ export default function StatsPanel({
     const currentStats = matchStats[match.id] || { scorers: [], goalkeepers: [] };
     
     // Resetear formularios de goleadores
+    setHomeScorerId("");
     setCustomHomeScorer("");
     setHomeScorerGoals(1);
 
+    setAwayScorerId("");
     setCustomAwayScorer("");
     setAwayScorerGoals(1);
 
@@ -159,27 +165,43 @@ export default function StatsPanel({
     const awayTeamObj = findTeam(match.awayTeamId);
 
     const savedHomeGk = currentStats.goalkeepers.find(gk => {
-      return homeTeamObj?.players?.some(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gk.playerName.toLowerCase()) || gk.playerId.startsWith('custom_gk_h_') || false;
+      return homeTeamObj?.players?.some(p => p.id === gk.playerId) || gk.playerId.startsWith('custom_gk_h_') || false;
     });
     const savedAwayGk = currentStats.goalkeepers.find(gk => {
-      return awayTeamObj?.players?.some(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gk.playerName.toLowerCase()) || gk.playerId.startsWith('custom_gk_a_') || false;
+      return awayTeamObj?.players?.some(p => p.id === gk.playerId) || gk.playerId.startsWith('custom_gk_a_') || false;
     });
 
     if (savedHomeGk) {
-      setCustomHomeGoalkeeper(savedHomeGk.playerName);
+      const isPlayerObj = homeTeamObj?.players?.find(p => p.id === savedHomeGk.playerId);
+      if (isPlayerObj) {
+        setHomeGkId(savedHomeGk.playerId);
+        setCustomHomeGoalkeeper("");
+      } else {
+        setHomeGkId("custom");
+        setCustomHomeGoalkeeper(savedHomeGk.playerName);
+      }
       setHomeGkConceded(savedHomeGk.goalsConceded);
       setHomeGkMatches(savedHomeGk.matchesPlayed);
     } else {
+      setHomeGkId("");
       setCustomHomeGoalkeeper("");
       setHomeGkConceded(match.awayScore ?? 0);
       setHomeGkMatches(1);
     }
 
     if (savedAwayGk) {
-      setCustomAwayGoalkeeper(savedAwayGk.playerName);
+      const isPlayerObj = awayTeamObj?.players?.find(p => p.id === savedAwayGk.playerId);
+      if (isPlayerObj) {
+        setAwayGkId(savedAwayGk.playerId);
+        setCustomAwayGoalkeeper("");
+      } else {
+        setAwayGkId("custom");
+        setCustomAwayGoalkeeper(savedAwayGk.playerName);
+      }
       setAwayGkConceded(savedAwayGk.goalsConceded);
       setAwayGkMatches(savedAwayGk.matchesPlayed);
     } else {
+      setAwayGkId("");
       setCustomAwayGoalkeeper("");
       setAwayGkConceded(match.homeScore ?? 0);
       setAwayGkMatches(1);
@@ -193,22 +215,30 @@ export default function StatsPanel({
     const teamObj = findTeam(teamId);
     if (!teamObj) return;
 
+    const selectedPlayerId = side === 'home' ? homeScorerId : awayScorerId;
     const customVal = side === 'home' ? customHomeScorer.trim() : customAwayScorer.trim();
     const goalsVal = side === 'home' ? homeScorerGoals : awayScorerGoals;
 
-    if (!customVal) return;
+    let pId = "";
+    let pName = "";
 
-    // Buscar si coincide con algún jugador de la plantilla para tener el ID, si no se genera uno nuevo
-    const existingPlayer = teamObj.players?.find(p => `${p.firstName} ${p.lastName}`.toLowerCase() === customVal.toLowerCase());
-    const prefix = side === 'home' ? 'custom_h_' : 'custom_a_';
-    const pId = existingPlayer ? existingPlayer.id : `${prefix}${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
-    const pName = existingPlayer ? `${existingPlayer.firstName} ${existingPlayer.lastName}` : customVal;
+    if (selectedPlayerId && selectedPlayerId !== 'custom') {
+      const player = teamObj.players?.find(p => p.id === selectedPlayerId);
+      if (!player) return;
+      pId = player.id;
+      pName = `${player.firstName} ${player.lastName}`;
+    } else {
+      if (!customVal) return;
+      const prefix = side === 'home' ? 'custom_h_' : 'custom_a_';
+      pId = `${prefix}${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+      pName = customVal;
+    }
 
     const currentStats = matchStats[selectedMatch.id] || { scorers: [], goalkeepers: [] };
     
     // Comprobar si ya existe para sumarle o añadirlo nuevo
     let updatedScorers = [...currentStats.scorers];
-    const existingIndex = updatedScorers.findIndex(s => s.playerName.toLowerCase() === pName.toLowerCase());
+    const existingIndex = updatedScorers.findIndex(s => s.playerId === pId);
     
     if (existingIndex > -1) {
       updatedScorers[existingIndex].goals += goalsVal;
@@ -226,9 +256,11 @@ export default function StatsPanel({
 
     // Resetear inputs de añadir goleador
     if (side === 'home') {
+      setHomeScorerId("");
       setCustomHomeScorer("");
       setHomeScorerGoals(1);
     } else {
+      setAwayScorerId("");
       setCustomAwayScorer("");
       setAwayScorerGoals(1);
     }
@@ -258,29 +290,43 @@ export default function StatsPanel({
     const currentStats = matchStats[selectedMatch.id] || { scorers: [], goalkeepers: [] };
     const updatedGoalkeepers: GoalkeeperStats[] = [];
 
-    // Guardar portero local si se ha introducido
-    if (customHomeGoalkeeper.trim()) {
+    // Guardar portero local
+    if (homeGkId && homeGkId !== 'custom') {
+      const player = homeTeamObj?.players?.find(p => p.id === homeGkId);
+      if (player) {
+        updatedGoalkeepers.push({
+          playerId: player.id,
+          playerName: `${player.firstName} ${player.lastName}`,
+          goalsConceded: homeGkConceded,
+          matchesPlayed: homeGkMatches
+        });
+      }
+    } else if (customHomeGoalkeeper.trim()) {
       const gkName = customHomeGoalkeeper.trim();
-      const existingPlayer = homeTeamObj?.players?.find(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gkName.toLowerCase());
-      const pId = existingPlayer ? existingPlayer.id : `custom_gk_h_${selectedMatch.id}`;
-      
       updatedGoalkeepers.push({
-        playerId: pId,
-        playerName: existingPlayer ? `${existingPlayer.firstName} ${existingPlayer.lastName}` : gkName,
+        playerId: `custom_gk_h_${selectedMatch.id}`,
+        playerName: gkName,
         goalsConceded: homeGkConceded,
         matchesPlayed: homeGkMatches
       });
     }
 
-    // Guardar portero visitante si se ha introducido
-    if (customAwayGoalkeeper.trim()) {
+    // Guardar portero visitante
+    if (awayGkId && awayGkId !== 'custom') {
+      const player = awayTeamObj?.players?.find(p => p.id === awayGkId);
+      if (player) {
+        updatedGoalkeepers.push({
+          playerId: player.id,
+          playerName: `${player.firstName} ${player.lastName}`,
+          goalsConceded: awayGkConceded,
+          matchesPlayed: awayGkMatches
+        });
+      }
+    } else if (customAwayGoalkeeper.trim()) {
       const gkName = customAwayGoalkeeper.trim();
-      const existingPlayer = awayTeamObj?.players?.find(p => `${p.firstName} ${p.lastName}`.toLowerCase() === gkName.toLowerCase());
-      const pId = existingPlayer ? existingPlayer.id : `custom_gk_a_${selectedMatch.id}`;
-      
       updatedGoalkeepers.push({
-        playerId: pId,
-        playerName: existingPlayer ? `${existingPlayer.firstName} ${existingPlayer.lastName}` : gkName,
+        playerId: `custom_gk_a_${selectedMatch.id}`,
+        playerName: gkName,
         goalsConceded: awayGkConceded,
         matchesPlayed: awayGkMatches
       });
@@ -576,19 +622,19 @@ export default function StatsPanel({
                 {/* Formulario Añadir Goleador Local */}
                 <div className="flex flex-col gap-2">
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      list={`home-scorers-list-${selectedMatch.id}`}
-                      value={customHomeScorer}
-                      onChange={(e) => setCustomHomeScorer(e.target.value)}
-                      placeholder="Escribe el nombre del goleador..."
+                    <select
+                      value={homeScorerId}
+                      onChange={(e) => setHomeScorerId(e.target.value)}
                       className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
-                    />
-                    <datalist id={`home-scorers-list-${selectedMatch.id}`}>
+                    >
+                      <option value="">-- Seleccionar Goleador --</option>
                       {findTeam(selectedMatch.homeTeamId)?.players?.map(p => (
-                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                        <option key={p.id} value={p.id}>
+                          {p.firstName} {p.lastName} {p.dni ? `(${p.dni})` : ''}
+                        </option>
                       ))}
-                    </datalist>
+                      <option value="custom">-- Otro jugador (Escribir a mano) --</option>
+                    </select>
 
                     <input 
                       type="number"
@@ -607,6 +653,16 @@ export default function StatsPanel({
                       +
                     </button>
                   </div>
+
+                  {homeScorerId === 'custom' && (
+                    <input
+                      type="text"
+                      value={customHomeScorer}
+                      onChange={(e) => setCustomHomeScorer(e.target.value)}
+                      placeholder="Nombre del goleador..."
+                      className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    />
+                  )}
                 </div>
 
                 {/* Lista de goleadores locales añadidos */}
@@ -620,7 +676,7 @@ export default function StatsPanel({
                       <div key={idx} className="flex justify-between items-center p-2 bg-zinc-900/60 border border-zinc-900 text-xs">
                         <span className="font-header font-black text-zinc-300 uppercase">{s.playerName}</span>
                         <div className="flex items-center gap-3">
-                          <span className="font-data font-black text-yellow-400 bg-yellow-400/5 px-2 py-0.5 border border-yellow-400/10">{s.goals} G</span>
+                           <span className="font-data font-black text-yellow-400 bg-yellow-400/5 px-2 py-0.5 border border-yellow-400/10">{s.goals} G</span>
                           <button
                             onClick={() => handleRemoveScorer(s.playerId)}
                             className="text-rose-500 hover:text-rose-400 text-[10px] font-bold"
@@ -643,19 +699,19 @@ export default function StatsPanel({
                 {/* Formulario Añadir Goleador Visitante */}
                 <div className="flex flex-col gap-2">
                   <div className="flex gap-2">
-                    <input
-                      type="text"
-                      list={`away-scorers-list-${selectedMatch.id}`}
-                      value={customAwayScorer}
-                      onChange={(e) => setCustomAwayScorer(e.target.value)}
-                      placeholder="Escribe el nombre del goleador..."
+                    <select
+                      value={awayScorerId}
+                      onChange={(e) => setAwayScorerId(e.target.value)}
                       className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
-                    />
-                    <datalist id={`away-scorers-list-${selectedMatch.id}`}>
+                    >
+                      <option value="">-- Seleccionar Goleador --</option>
                       {findTeam(selectedMatch.awayTeamId)?.players?.map(p => (
-                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                        <option key={p.id} value={p.id}>
+                          {p.firstName} {p.lastName} {p.dni ? `(${p.dni})` : ''}
+                        </option>
                       ))}
-                    </datalist>
+                      <option value="custom">-- Otro jugador (Escribir a mano) --</option>
+                    </select>
 
                     <input 
                       type="number"
@@ -674,6 +730,16 @@ export default function StatsPanel({
                       +
                     </button>
                   </div>
+
+                  {awayScorerId === 'custom' && (
+                    <input
+                      type="text"
+                      value={customAwayScorer}
+                      onChange={(e) => setCustomAwayScorer(e.target.value)}
+                      placeholder="Nombre del goleador..."
+                      className="w-full bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                    />
+                  )}
                 </div>
 
                 {/* Lista de goleadores visitantes añadidos */}
@@ -714,19 +780,29 @@ export default function StatsPanel({
                 <div className="flex flex-col gap-3">
                   <span className="font-header font-bold text-[10px] text-zinc-400 uppercase">Portero Local (Defiende a {findTeam(selectedMatch.homeTeamId)?.name})</span>
                   <div className="flex flex-col gap-2">
-                    <input
-                      type="text"
-                      list={`home-gk-list-${selectedMatch.id}`}
-                      value={customHomeGoalkeeper}
-                      onChange={(e) => setCustomHomeGoalkeeper(e.target.value)}
-                      placeholder="Escribe el nombre del portero..."
+                    <select
+                      value={homeGkId}
+                      onChange={(e) => setHomeGkId(e.target.value)}
                       className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
-                    />
-                    <datalist id={`home-gk-list-${selectedMatch.id}`}>
+                    >
+                      <option value="">-- Seleccionar Portero --</option>
                       {findTeam(selectedMatch.homeTeamId)?.players?.map(p => (
-                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                        <option key={p.id} value={p.id}>
+                          {p.firstName} {p.lastName} {p.dni ? `(${p.dni})` : ''}
+                        </option>
                       ))}
-                    </datalist>
+                      <option value="custom">-- Otro jugador (Escribir a mano) --</option>
+                    </select>
+
+                    {homeGkId === 'custom' && (
+                      <input
+                        type="text"
+                        value={customHomeGoalkeeper}
+                        onChange={(e) => setCustomHomeGoalkeeper(e.target.value)}
+                        placeholder="Nombre del portero..."
+                        className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      />
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 mt-1">
                       <div className="flex flex-col gap-1">
@@ -759,19 +835,29 @@ export default function StatsPanel({
                 <div className="flex flex-col gap-3">
                   <span className="font-header font-bold text-[10px] text-zinc-400 uppercase">Portero Visitante (Defiende a {findTeam(selectedMatch.awayTeamId)?.name})</span>
                   <div className="flex flex-col gap-2">
-                    <input
-                      type="text"
-                      list={`away-gk-list-${selectedMatch.id}`}
-                      value={customAwayGoalkeeper}
-                      onChange={(e) => setCustomAwayGoalkeeper(e.target.value)}
-                      placeholder="Escribe el nombre del portero..."
+                    <select
+                      value={awayGkId}
+                      onChange={(e) => setAwayGkId(e.target.value)}
                       className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
-                    />
-                    <datalist id={`away-gk-list-${selectedMatch.id}`}>
+                    >
+                      <option value="">-- Seleccionar Portero --</option>
                       {findTeam(selectedMatch.awayTeamId)?.players?.map(p => (
-                        <option key={p.id} value={`${p.firstName} ${p.lastName}`} />
+                        <option key={p.id} value={p.id}>
+                          {p.firstName} {p.lastName} {p.dni ? `(${p.dni})` : ''}
+                        </option>
                       ))}
-                    </datalist>
+                      <option value="custom">-- Otro jugador (Escribir a mano) --</option>
+                    </select>
+
+                    {awayGkId === 'custom' && (
+                      <input
+                        type="text"
+                        value={customAwayGoalkeeper}
+                        onChange={(e) => setCustomAwayGoalkeeper(e.target.value)}
+                        placeholder="Nombre del portero..."
+                        className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      />
+                    )}
 
                     <div className="grid grid-cols-2 gap-2 mt-1">
                       <div className="flex flex-col gap-1">
