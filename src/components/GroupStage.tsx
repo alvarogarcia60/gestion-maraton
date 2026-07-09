@@ -944,10 +944,16 @@ export default function GroupStage({
                 min-width: 1440px !important;
                 padding: 32px !important;
               }
-              .export-mode .export-grid-2col {
+              .export-mode .export-group-grid {
                 display: grid !important;
-                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
                 gap: 32px !important;
+              }
+              .export-mode .export-standings-card {
+                grid-column: span 5 / span 5 !important;
+              }
+              .export-mode .export-calendar-card {
+                grid-column: span 7 / span 7 !important;
               }
               .export-mode .export-rounds-grid {
                 display: grid !important;
@@ -972,12 +978,12 @@ export default function GroupStage({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10 export-grid-2col">
+            <div className="grid grid-cols-1 gap-12 relative z-10">
               {groups.map((group) => (
-                <div key={group.id} className="flex flex-col gap-8">
+                <div key={group.id} className="grid grid-cols-1 xl:grid-cols-12 gap-8 relative z-10 export-group-grid">
                   
                   {/* Tabla de clasificación */}
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-none p-6 shadow-xl">
+                  <div className="xl:col-span-5 bg-zinc-900 border border-zinc-800 rounded-none p-6 shadow-xl export-standings-card">
                     <h3 className="font-header font-black text-lg text-white mb-5 pb-3 border-b border-zinc-800 uppercase tracking-wider flex items-center gap-2">
                       <Trophy className="w-4 h-4 text-yellow-400" /> {group.name}
                     </h3>
@@ -1042,7 +1048,7 @@ export default function GroupStage({
                   </div>
 
                   {/* Calendario */}
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-none p-6 shadow-xl flex flex-col gap-5">
+                  <div className="xl:col-span-7 bg-zinc-900 border border-zinc-800 rounded-none p-6 shadow-xl flex flex-col gap-5 export-calendar-card">
                     <h4 className="font-header font-black text-xs uppercase text-zinc-400 tracking-widest border-b border-zinc-800 pb-2">
                       Partidos y Marcadores
                     </h4>
