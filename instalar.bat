@@ -83,7 +83,7 @@ if not exist ".env.local" (
     echo [PROCESO] Creando archivo .env.local con la configuracion de MongoDB...
     (
         echo # Conexion a la base de datos de MongoDB
-        echo MONGODB_URI=mongodb+srv://algarcimartinez_cb_user:mu077OmChkakRI6x@cluster0.50okkq9.mongodb.net/programafutbol?retryWrites=true^&w=majority^&appName=Cluster0
+        echo MONGODB_URI=mongodb://algarcimartinez_cb_user:mu077OmChkakRI6x@ac-ia4s2e1-shard-00-00.50okkq9.mongodb.net:27017,ac-ia4s2e1-shard-00-01.50okkq9.mongodb.net:27017,ac-ia4s2e1-shard-00-02.50okkq9.mongodb.net:27017/programafutbol?ssl=true^&replicaSet=atlas-i2al9v-shard-0^&authSource=admin^&retryWrites=true^&w=majority
     ) > .env.local
     echo [OK] Archivo .env.local creado correctamente.
 ) else (
