@@ -949,6 +949,12 @@ export default function GroupStage({
                 grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
                 gap: 32px !important;
               }
+              .export-mode .export-rounds-grid {
+                display: grid !important;
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 20px !important;
+                align-items: start !important;
+              }
               .export-mode .no-print {
                 display: none !important;
               }
@@ -1040,7 +1046,7 @@ export default function GroupStage({
                     <h4 className="font-header font-black text-xs uppercase text-zinc-400 tracking-widest border-b border-zinc-800 pb-2">
                       Partidos y Marcadores
                     </h4>
-                    <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-4 export-rounds-grid">
                       {Array.from(new Set(group.matches.map(m => m.roundName))).map(roundName => (
                         <div key={roundName} className="flex flex-col gap-2.5">
                           <div className="font-header font-black text-[10px] text-yellow-400 bg-yellow-400/10 py-1.5 px-3 rounded-none border border-yellow-400/20 uppercase tracking-widest inline-block self-start">

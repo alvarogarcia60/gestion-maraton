@@ -52,6 +52,7 @@ export default function ExportButton({
       
       const dataUrl = await toPng(elementRef.current, {
         quality: 1,
+        pixelRatio: 2, // Ultra-sharp double resolution
         backgroundColor: backgroundColor, // Usar color de fondo personalizado
         style: {
           transform: 'scale(1)',
@@ -111,34 +112,62 @@ export default function ExportButton({
       elementRef.current.classList.add('export-mode');
       await new Promise((resolve) => setTimeout(resolve, 300));
 
-      const dataUrl = await toPng(elementRef.current, {
+      const tempPng = await toPng(elementRef.current, {
         quality: 1,
-        backgroundColor: backgroundColor, // Usar color de fondo personalizado
+        pixelRatio: 2, // Ultra-sharp double resolution
+        backgroundColor: backgroundColor,
       });
 
+      const tempImg = new Image();
+      tempImg.src = tempPng;
+      await new Promise((resolve) => {
+        tempImg.onload = resolve;
+      });
+
+      const isLandscape = tempImg.width > tempImg.height;
       const pdf = new jsPDF({
-        orientation: 'portrait',
+        orientation: isLandscape ? 'landscape' : 'portrait',
         unit: 'mm',
         format: 'a4'
       });
 
-      const imgWidth = 210; // Ancho A4 en mm
-      const imgProps = pdf.getImageProperties(dataUrl);
+      const pageWidth = isLandscape ? 297 : 210;
+      const pageHeight = isLandscape ? 210 : 297;
+
+      const imgWidth = pageWidth;
+      const imgProps = pdf.getImageProperties(tempPng);
       const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
-      const pageHeight = 297; // Alto A4 en mm
 
-      let heightLeft = imgHeight;
-      let page = 1;
+      const hexToRgb = (hex: string) => {
+        const cleanHex = hex.replace('#', '');
+        const bigint = parseInt(cleanHex, 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return { r, g, b };
+      };
 
-      pdf.addImage(dataUrl, 'PNG', 0, 0, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      const rgb = hexToRgb(backgroundColor);
+
+      // Dibujar fondo en la primera página
+      pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+      pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+
+      pdf.addImage(tempPng, 'PNG', 0, 0, imgWidth, imgHeight);
+      let heightLeft = imgHeight - pageHeight;
+      let pageIndex = 1;
 
       while (heightLeft > 0) {
         pdf.addPage();
-        const position = -page * pageHeight;
-        pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
+        
+        // Dibujar fondo en las siguientes páginas
+        pdf.setFillColor(rgb.r, rgb.g, rgb.b);
+        pdf.rect(0, 0, pageWidth, pageHeight, 'F');
+
+        const position = -pageIndex * pageHeight;
+        pdf.addImage(tempPng, 'PNG', 0, position, imgWidth, imgHeight);
         heightLeft -= pageHeight;
-        page++;
+        pageIndex++;
       }
 
       pdf.save(`${fileName}.pdf`);
