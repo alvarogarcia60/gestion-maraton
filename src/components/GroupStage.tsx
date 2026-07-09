@@ -39,6 +39,22 @@ export default function GroupStage({
   const [drawTimestamp, setDrawTimestamp] = useState<string | null>(null);
   
   const [isExportingActa, setIsExportingActa] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const formatMatchDate = (isoString?: string) => {
+    if (!isoString) return '—';
+    try {
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) return isoString;
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${day}/${month} ${hours}:${minutes}`;
+    } catch {
+      return isoString;
+    }
+  };
 
   // Estados para la Planificación de Horarios y Campos - Fase de Grupos
   const [startDate, setStartDate] = useState<string>('2026-06-25');
@@ -909,13 +925,35 @@ export default function GroupStage({
                 </select>
               </div>
             </div>
-            <ExportButton elementRef={containerRef} fileName="Clasificacion_Fase_de_Grupos" />
+            <ExportButton 
+              elementRef={containerRef} 
+              fileName="Clasificacion_Fase_de_Grupos" 
+              onBeforeExport={() => setIsExporting(true)}
+              onAfterExport={() => setIsExporting(false)}
+            />
           </div>
 
           <div 
             ref={containerRef}
             className="w-full max-w-6xl bg-zinc-950 border border-zinc-800 shadow-[0_20px_50px_rgba(0,0,0,0.8)] rounded-none p-8 flex flex-col gap-10 transition-all duration-300 relative overflow-hidden"
           >
+            <style>{`
+              .export-mode {
+                width: 1440px !important;
+                max-width: 1440px !important;
+                min-width: 1440px !important;
+                padding: 32px !important;
+              }
+              .export-mode .export-grid-2col {
+                display: grid !important;
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                gap: 32px !important;
+              }
+              .export-mode .no-print {
+                display: none !important;
+              }
+            `}</style>
+            
             <div className="text-center border-b border-zinc-800 pb-6 relative z-10">
               <span className="font-header font-black text-xs uppercase tracking-widest text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-3 py-1 rounded-none">
                 FASE DE GRUPOS
@@ -928,7 +966,7 @@ export default function GroupStage({
               </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 relative z-10 export-grid-2col">
               {groups.map((group) => (
                 <div key={group.id} className="flex flex-col gap-8">
                   
@@ -1022,22 +1060,34 @@ export default function GroupStage({
                                   <div className="flex justify-between items-center text-[10px] border-b border-zinc-900/60 pb-2 mb-1.5 gap-2">
                                     <div className="flex items-center gap-1.5 w-7/12">
                                       <Calendar className="w-3.5 h-3.5 text-yellow-400 shrink-0" />
-                                      <input
-                                        type="datetime-local"
-                                        value={match.fechaHora || ''}
-                                        onChange={(e) => handleMatchScheduleChange(group.id, match.id, 'fechaHora', e.target.value)}
-                                        className="bg-transparent hover:bg-zinc-900 focus:bg-zinc-900 border border-transparent hover:border-zinc-800 focus:border-yellow-400/40 text-[11px] text-yellow-450 font-mono font-black px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-pointer"
-                                      />
+                                      {isExporting ? (
+                                        <span className="text-[11px] text-yellow-450 font-mono font-black px-1.5 py-0.5 leading-none select-none">
+                                          {match.fechaHora ? formatMatchDate(match.fechaHora) : '—'}
+                                        </span>
+                                      ) : (
+                                        <input
+                                          type="datetime-local"
+                                          value={match.fechaHora || ''}
+                                          onChange={(e) => handleMatchScheduleChange(group.id, match.id, 'fechaHora', e.target.value)}
+                                          className="bg-transparent hover:bg-zinc-900 focus:bg-zinc-900 border border-transparent hover:border-zinc-800 focus:border-yellow-400/40 text-[11px] text-yellow-450 font-mono font-black px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-pointer"
+                                        />
+                                      )}
                                     </div>
                                     <div className="flex items-center gap-1.5 w-5/12 justify-end">
                                       <MapPin className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                                      <input
-                                        type="text"
-                                        value={match.pistaCampo || ''}
-                                        placeholder="CAMPO/PISTA"
-                                        onChange={(e) => handleMatchScheduleChange(group.id, match.id, 'pistaCampo', e.target.value)}
-                                        className="bg-transparent hover:bg-zinc-900 focus:bg-zinc-900 border border-transparent hover:border-zinc-800 focus:border-yellow-400/40 text-[10px] text-zinc-200 font-header font-black uppercase text-right px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-text"
-                                      />
+                                      {isExporting ? (
+                                        <span className="text-[10px] text-zinc-200 font-header font-black uppercase text-right leading-none select-none">
+                                          {match.pistaCampo || '—'}
+                                        </span>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          value={match.pistaCampo || ''}
+                                          placeholder="CAMPO/PISTA"
+                                          onChange={(e) => handleMatchScheduleChange(group.id, match.id, 'pistaCampo', e.target.value)}
+                                          className="bg-transparent hover:bg-zinc-900 focus:bg-zinc-900 border border-transparent hover:border-zinc-800 focus:border-yellow-400/40 text-[10px] text-zinc-200 font-header font-black uppercase text-right px-1.5 py-0.5 rounded-none w-full focus:outline-none transition-all cursor-text"
+                                        />
+                                      )}
                                     </div>
                                   </div>
 
@@ -1051,23 +1101,35 @@ export default function GroupStage({
                                     </div>
                                     
                                     <div className="flex items-center justify-center gap-1 w-2/12">
-                                      <input
-                                        type="text"
-                                        pattern="[0-9]*"
-                                        placeholder="-"
-                                        value={match.homeScore ?? ''}
-                                        onChange={(e) => handleScoreChange(group.id, match.id, 'home', e.target.value)}
-                                        className="w-7 h-7 text-center font-data font-black text-xs bg-zinc-900 border border-zinc-800 rounded-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 focus:outline-none text-white shadow-inner"
-                                      />
+                                      {isExporting ? (
+                                        <span className="w-7 h-7 bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs font-data font-black text-white select-none">
+                                          {match.homeScore !== undefined ? match.homeScore : '-'}
+                                        </span>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          pattern="[0-9]*"
+                                          placeholder="-"
+                                          value={match.homeScore ?? ''}
+                                          onChange={(e) => handleScoreChange(group.id, match.id, 'home', e.target.value)}
+                                          className="w-7 h-7 text-center font-data font-black text-xs bg-zinc-900 border border-zinc-800 rounded-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 focus:outline-none text-white shadow-inner"
+                                        />
+                                      )}
                                       <span className="text-zinc-650 font-bold">:</span>
-                                      <input
-                                        type="text"
-                                        pattern="[0-9]*"
-                                        placeholder="-"
-                                        value={match.awayScore ?? ''}
-                                        onChange={(e) => handleScoreChange(group.id, match.id, 'away', e.target.value)}
-                                        className="w-7 h-7 text-center font-data font-black text-xs bg-zinc-900 border border-zinc-800 rounded-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 focus:outline-none text-white shadow-inner"
-                                      />
+                                      {isExporting ? (
+                                        <span className="w-7 h-7 bg-zinc-900 border border-zinc-800 flex items-center justify-center text-xs font-data font-black text-white select-none">
+                                          {match.awayScore !== undefined ? match.awayScore : '-'}
+                                        </span>
+                                      ) : (
+                                        <input
+                                          type="text"
+                                          pattern="[0-9]*"
+                                          placeholder="-"
+                                          value={match.awayScore ?? ''}
+                                          onChange={(e) => handleScoreChange(group.id, match.id, 'away', e.target.value)}
+                                          className="w-7 h-7 text-center font-data font-black text-xs bg-zinc-900 border border-zinc-800 rounded-none focus:border-yellow-400 focus:ring-1 focus:ring-yellow-400 focus:outline-none text-white shadow-inner"
+                                        />
+                                      )}
                                     </div>
                                     
                                     <div className="flex items-center gap-2.5 w-5/12 font-header font-black uppercase text-xs truncate justify-end text-right">

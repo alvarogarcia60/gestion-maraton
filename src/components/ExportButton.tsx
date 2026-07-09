@@ -125,8 +125,22 @@ export default function ExportButton({
       const imgWidth = 210; // Ancho A4 en mm
       const imgProps = pdf.getImageProperties(dataUrl);
       const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+      const pageHeight = 297; // Alto A4 en mm
+
+      let heightLeft = imgHeight;
+      let page = 1;
 
       pdf.addImage(dataUrl, 'PNG', 0, 0, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        pdf.addPage();
+        const position = -page * pageHeight;
+        pdf.addImage(dataUrl, 'PNG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+        page++;
+      }
+
       pdf.save(`${fileName}.pdf`);
     } catch (error) {
       console.error('Error al exportar PDF:', error);
