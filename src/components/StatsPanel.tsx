@@ -10,6 +10,7 @@ interface StatsPanelProps {
   knockoutMatches: Match[];
   matchStats: Record<string, MatchStats>;
   setMatchStats: React.Dispatch<React.SetStateAction<Record<string, MatchStats>>>;
+  onSaveTournament?: (updatedStats?: Record<string, MatchStats>) => Promise<void>;
 }
 
 export default function StatsPanel({
@@ -17,13 +18,17 @@ export default function StatsPanel({
   groups,
   knockoutMatches,
   matchStats,
-  setMatchStats
+  setMatchStats,
+  onSaveTournament
 }: StatsPanelProps) {
   // Pestaña interna de las tablas de estadísticas: 'scorers' | 'goalkeepers' | 'matches'
   const [innerTab, setInnerTab] = useState<'scorers' | 'goalkeepers' | 'matches'>('scorers');
   
   // Estado para el partido seleccionado para editar estadísticas
   const [selectedMatch, setSelectedMatch] = useState<Match | null>(null);
+
+  // Estado temporal local para los goleadores del modal
+  const [modalScorers, setModalScorers] = useState<PlayerStats[]>([]);
 
   // Estados del editor de estadísticas de partido
   const [homeScorerId, setHomeScorerId] = useState<string>("");
@@ -58,6 +63,77 @@ export default function StatsPanel({
     return registeredTeams.find(t => t.id === teamId) || null;
   };
 
+  const groupMatchesWithTeams = groups.flatMap(g => g.matches).filter(match => {
+    const home = findTeam(match.homeTeamId);
+    const away = findTeam(match.awayTeamId);
+    return home !== null && away !== null;
+  });
+
+  const knockoutMatchesWithTeams = knockoutMatches.filter(match => {
+    const home = findTeam(match.homeTeamId);
+    const away = findTeam(match.awayTeamId);
+    return home !== null && away !== null;
+  });
+
+  const renderMatchCard = (match: Match) => {
+    const homeTeam = findTeam(match.homeTeamId);
+    const awayTeam = findTeam(match.awayTeamId);
+    if (!homeTeam || !awayTeam) return null;
+    
+    const stats = matchStats[match.id];
+    const hasStats = stats && (stats.scorers.length > 0 || stats.goalkeepers.length > 0);
+
+    return (
+      <div 
+        key={match.id}
+        className="bg-zinc-950 border border-zinc-850 p-4 flex flex-col gap-3 hover:border-zinc-700 transition-all justify-between"
+      >
+        <div className="flex justify-between items-center text-[10px] text-zinc-550 border-b border-zinc-900 pb-2">
+          <span className="font-header font-black uppercase text-yellow-400/80 bg-yellow-400/5 border border-yellow-400/10 px-1.5 py-0.5">
+            {match.roundName}
+          </span>
+          <span className="font-mono text-zinc-500">
+            {match.fechaHora 
+              ? new Date(match.fechaHora).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+              : 'TBD'}
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between py-1">
+          <span className="font-header font-black text-xs uppercase text-zinc-300 w-5/12 truncate flex items-center gap-1.5">
+            <span>{homeTeam.logoUrl}</span>
+            <span className="truncate">{homeTeam.name}</span>
+          </span>
+          <span className="w-2/12 text-center font-data font-black text-sm text-yellow-400 bg-yellow-400/10 px-2 py-0.5 border border-yellow-400/20">
+            {match.homeScore ?? '-'} : {match.awayScore ?? '-'}
+          </span>
+          <span className="font-header font-black text-xs uppercase text-zinc-300 w-5/12 truncate flex items-center gap-1.5 justify-end text-right">
+            <span className="truncate">{awayTeam.name}</span>
+            <span>{awayTeam.logoUrl}</span>
+          </span>
+        </div>
+
+        <div className="flex items-center justify-between border-t border-zinc-900 pt-3">
+          <span className="text-[10px] text-zinc-500 font-sans">
+            {hasStats ? (
+              <span className="text-emerald-400 font-bold">✓ Datos cargados</span>
+            ) : (
+              <span className="text-zinc-650 italic">Sin datos de jugadores</span>
+            )}
+          </span>
+          <button
+            onClick={() => handleOpenEditor(match)}
+            className={`text-[10px] font-header font-black uppercase tracking-wider px-3 py-1.5 rounded-none cursor-pointer transition-colors ${
+              hasStats ? 'bg-zinc-800 text-zinc-350 hover:bg-zinc-700' : 'bg-yellow-400 text-black hover:bg-yellow-500'
+            }`}
+          >
+            {hasStats ? 'Editar Estadísticas' : 'Cargar Goles/Porteros'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   // 2. Calcular estadísticas acumuladas
   const scorerTotals: Record<string, { name: string; teamName: string; logoUrl: string; goals: number }> = {};
   const gkTotals: Record<string, { name: string; teamName: string; logoUrl: string; conceded: number; matchesPlayed: number }> = {};
@@ -67,7 +143,6 @@ export default function StatsPanel({
 
     // Sumar goleadores
     stats.scorers.forEach(s => {
-      const key = `${s.playerName}_${s.playerId}`; // Unicidad
       let teamName = "Desconocido";
       let logoUrl = "⚽";
       
@@ -91,6 +166,12 @@ export default function StatsPanel({
         }
       }
 
+      // Si es un jugador custom, usamos el nombre y el equipo como clave única
+      // para poder acumular los goles del mismo jugador en diferentes partidos.
+      const key = s.playerId.startsWith('custom_')
+        ? `custom_${s.playerName.trim().toLowerCase()}_${teamName}`
+        : s.playerId;
+
       if (!scorerTotals[key]) {
         scorerTotals[key] = { name: s.playerName, teamName, logoUrl, goals: 0 };
       }
@@ -99,7 +180,6 @@ export default function StatsPanel({
 
     // Sumar porteros
     stats.goalkeepers.forEach(gk => {
-      const key = `${gk.playerName}_${gk.playerId}`;
       let teamName = "Desconocido";
       let logoUrl = "⚽";
       
@@ -122,6 +202,11 @@ export default function StatsPanel({
           }
         }
       }
+
+      // Si es un portero custom, usamos el nombre y el equipo como clave única
+      const key = gk.playerId.startsWith('custom_')
+        ? `custom_${gk.playerName.trim().toLowerCase()}_${teamName}`
+        : gk.playerId;
 
       if (!gkTotals[key]) {
         gkTotals[key] = { name: gk.playerName, teamName, logoUrl, conceded: 0, matchesPlayed: 0 };
@@ -150,6 +235,9 @@ export default function StatsPanel({
     
     // Obtener estadísticas guardadas previamente si existen
     const currentStats = matchStats[match.id] || { scorers: [], goalkeepers: [] };
+    
+    // Inicializar goleadores temporales en el modal
+    setModalScorers(currentStats.scorers || []);
     
     // Resetear formularios de goleadores
     setHomeScorerId("");
@@ -208,7 +296,7 @@ export default function StatsPanel({
     }
   };
 
-  // Añadir goleador
+  // Añadir goleador (guarda solo en estado temporal del modal)
   const handleAddScorer = (side: 'home' | 'away') => {
     if (!selectedMatch) return;
     const teamId = side === 'home' ? selectedMatch.homeTeamId : selectedMatch.awayTeamId;
@@ -234,25 +322,16 @@ export default function StatsPanel({
       pName = customVal;
     }
 
-    const currentStats = matchStats[selectedMatch.id] || { scorers: [], goalkeepers: [] };
-    
-    // Comprobar si ya existe para sumarle o añadirlo nuevo
-    let updatedScorers = [...currentStats.scorers];
-    const existingIndex = updatedScorers.findIndex(s => s.playerId === pId);
-    
-    if (existingIndex > -1) {
-      updatedScorers[existingIndex].goals += goalsVal;
-    } else {
-      updatedScorers.push({ playerId: pId, playerName: pName, goals: goalsVal });
-    }
-
-    setMatchStats(prev => ({
-      ...prev,
-      [selectedMatch.id]: {
-        ...currentStats,
-        scorers: updatedScorers
+    setModalScorers(prev => {
+      const updated = [...prev];
+      const existingIndex = updated.findIndex(s => s.playerId === pId);
+      if (existingIndex > -1) {
+        updated[existingIndex].goals += goalsVal;
+      } else {
+        updated.push({ playerId: pId, playerName: pName, goals: goalsVal });
       }
-    }));
+      return updated;
+    });
 
     // Resetear inputs de añadir goleador
     if (side === 'home') {
@@ -266,35 +345,87 @@ export default function StatsPanel({
     }
   };
 
-  // Eliminar goleador
+  // Eliminar goleador (elimina solo del estado temporal del modal)
   const handleRemoveScorer = (pId: string) => {
-    if (!selectedMatch) return;
-    const currentStats = matchStats[selectedMatch.id];
-    if (!currentStats) return;
-
-    setMatchStats(prev => ({
-      ...prev,
-      [selectedMatch.id]: {
-        ...currentStats,
-        scorers: currentStats.scorers.filter(s => s.playerId !== pId)
-      }
-    }));
+    setModalScorers(prev => prev.filter(s => s.playerId !== pId));
   };
 
-  // Guardar porteros del partido
-  const handleSaveGoalkeepers = () => {
-    if (!selectedMatch) return;
+  // Compilar goleadores desde la lista actual y cualquier entrada pendiente en los selectores
+  const getCompiledScorers = (): PlayerStats[] => {
+    if (!selectedMatch) return modalScorers;
+    let compiled = [...modalScorers];
+
+    // Auto-añadir goleador local si se seleccionó en el dropdown pero no se pulsó "+"
+    if (homeScorerId) {
+      const teamObj = findTeam(selectedMatch.homeTeamId);
+      if (teamObj) {
+        let pId = "";
+        let pName = "";
+        if (homeScorerId !== 'custom') {
+          const player = teamObj.players?.find(p => p.id === homeScorerId);
+          if (player) {
+            pId = player.id;
+            pName = `${player.firstName} ${player.lastName}`;
+          }
+        } else if (customHomeScorer.trim()) {
+          pId = `custom_h_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+          pName = customHomeScorer.trim();
+        }
+
+        if (pId) {
+          const existingIndex = compiled.findIndex(s => s.playerId === pId);
+          if (existingIndex > -1) {
+            compiled[existingIndex].goals += homeScorerGoals;
+          } else {
+            compiled.push({ playerId: pId, playerName: pName, goals: homeScorerGoals });
+          }
+        }
+      }
+    }
+
+    // Auto-añadir goleador visitante si se seleccionó en el dropdown pero no se pulsó "+"
+    if (awayScorerId) {
+      const teamObj = findTeam(selectedMatch.awayTeamId);
+      if (teamObj) {
+        let pId = "";
+        let pName = "";
+        if (awayScorerId !== 'custom') {
+          const player = teamObj.players?.find(p => p.id === awayScorerId);
+          if (player) {
+            pId = player.id;
+            pName = `${player.firstName} ${player.lastName}`;
+          }
+        } else if (customAwayScorer.trim()) {
+          pId = `custom_a_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`;
+          pName = customAwayScorer.trim();
+        }
+
+        if (pId) {
+          const existingIndex = compiled.findIndex(s => s.playerId === pId);
+          if (existingIndex > -1) {
+            compiled[existingIndex].goals += awayScorerGoals;
+          } else {
+            compiled.push({ playerId: pId, playerName: pName, goals: awayScorerGoals });
+          }
+        }
+      }
+    }
+
+    return compiled;
+  };
+
+  // Compilar porteros desde los inputs del formulario del modal
+  const getCompiledGoalkeepers = (): GoalkeeperStats[] => {
+    if (!selectedMatch) return [];
     const homeTeamObj = findTeam(selectedMatch.homeTeamId);
     const awayTeamObj = findTeam(selectedMatch.awayTeamId);
-
-    const currentStats = matchStats[selectedMatch.id] || { scorers: [], goalkeepers: [] };
-    const updatedGoalkeepers: GoalkeeperStats[] = [];
+    const compiled: GoalkeeperStats[] = [];
 
     // Guardar portero local
     if (homeGkId && homeGkId !== 'custom') {
       const player = homeTeamObj?.players?.find(p => p.id === homeGkId);
       if (player) {
-        updatedGoalkeepers.push({
+        compiled.push({
           playerId: player.id,
           playerName: `${player.firstName} ${player.lastName}`,
           goalsConceded: homeGkConceded,
@@ -303,7 +434,7 @@ export default function StatsPanel({
       }
     } else if (customHomeGoalkeeper.trim()) {
       const gkName = customHomeGoalkeeper.trim();
-      updatedGoalkeepers.push({
+      compiled.push({
         playerId: `custom_gk_h_${selectedMatch.id}`,
         playerName: gkName,
         goalsConceded: homeGkConceded,
@@ -315,7 +446,7 @@ export default function StatsPanel({
     if (awayGkId && awayGkId !== 'custom') {
       const player = awayTeamObj?.players?.find(p => p.id === awayGkId);
       if (player) {
-        updatedGoalkeepers.push({
+        compiled.push({
           playerId: player.id,
           playerName: `${player.firstName} ${player.lastName}`,
           goalsConceded: awayGkConceded,
@@ -324,7 +455,7 @@ export default function StatsPanel({
       }
     } else if (customAwayGoalkeeper.trim()) {
       const gkName = customAwayGoalkeeper.trim();
-      updatedGoalkeepers.push({
+      compiled.push({
         playerId: `custom_gk_a_${selectedMatch.id}`,
         playerName: gkName,
         goalsConceded: awayGkConceded,
@@ -332,15 +463,51 @@ export default function StatsPanel({
       });
     }
 
-    setMatchStats(prev => ({
-      ...prev,
-      [selectedMatch.id]: {
-        ...currentStats,
-        goalkeepers: updatedGoalkeepers
-      }
-    }));
+    return compiled;
+  };
 
-    alert("✓ Estadísticas de porteros guardadas con éxito.");
+  // Guardar tanto goleadores como porteros del partido y persistir
+  const handleSaveAllStats = (closeModal: boolean) => {
+    if (!selectedMatch) return;
+
+    const compiledScorers = getCompiledScorers();
+    const compiledGks = getCompiledGoalkeepers();
+
+    // Actualizar el estado local para reflejar posibles auto-añadidos en la UI
+    setModalScorers(compiledScorers);
+
+    // Resetear campos de entrada de goleador
+    setHomeScorerId("");
+    setCustomHomeScorer("");
+    setHomeScorerGoals(1);
+    setAwayScorerId("");
+    setCustomAwayScorer("");
+    setAwayScorerGoals(1);
+
+    setMatchStats(prev => {
+      const newStats = {
+        ...prev,
+        [selectedMatch.id]: {
+          matchId: selectedMatch.id,
+          scorers: compiledScorers,
+          goalkeepers: compiledGks
+        }
+      };
+
+      if (onSaveTournament) {
+        // Pasamos las nuevas estadísticas directamente para evitar el stale closure en Home
+        setTimeout(() => {
+          onSaveTournament(newStats);
+        }, 100);
+      }
+      return newStats;
+    });
+
+    if (closeModal) {
+      setSelectedMatch(null);
+    } else {
+      alert("✓ Goleadores y porteros guardados con éxito.");
+    }
   };
 
   return (
@@ -506,72 +673,47 @@ export default function StatsPanel({
 
       {/* 3. SECCIÓN: LISTA DE PARTIDOS PARA CARGAR GOLES */}
       {innerTab === 'matches' && (
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-8">
           <div className="bg-zinc-950/60 p-4 border border-zinc-850">
             <p className="text-xs text-zinc-400 font-sans leading-relaxed">
-              Selecciona cualquier partido que ya se haya jugado (o en juego) para registrar sus goleadores y porteros asociados.
+              Selecciona cualquier partido disputado de la fase de grupos o de la fase eliminatoria para registrar sus goleadores y porteros asociados.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {allMatches.map((match) => {
-              const homeTeam = findTeam(match.homeTeamId);
-              const awayTeam = findTeam(match.awayTeamId);
-              if (!homeTeam || !awayTeam) return null;
-              
-              const stats = matchStats[match.id];
-              const hasStats = stats && (stats.scorers.length > 0 || stats.goalkeepers.length > 0);
+          {/* FASE DE GRUPOS */}
+          <div className="flex flex-col gap-4">
+            <h3 className="font-header font-black text-sm uppercase tracking-wider text-yellow-400 border-b border-zinc-800 pb-2 flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-yellow-400" />
+              Fase de Grupos
+            </h3>
+            
+            {groupMatchesWithTeams.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {groupMatchesWithTeams.map((match) => renderMatchCard(match))}
+              </div>
+            ) : (
+              <div className="p-6 bg-zinc-950 border border-zinc-850 text-center text-xs text-zinc-500 italic font-header uppercase tracking-wider">
+                No hay partidos de fase de grupos con equipos definidos.
+              </div>
+            )}
+          </div>
 
-              return (
-                <div 
-                  key={match.id}
-                  className="bg-zinc-950 border border-zinc-850 p-4 flex flex-col gap-3 hover:border-zinc-700 transition-all justify-between"
-                >
-                  <div className="flex justify-between items-center text-[10px] text-zinc-550 border-b border-zinc-900 pb-2">
-                    <span className="font-header font-black uppercase text-yellow-400/80 bg-yellow-400/5 border border-yellow-400/10 px-1.5 py-0.5">
-                      {match.roundName}
-                    </span>
-                    <span className="font-mono text-zinc-500">
-                      {match.fechaHora 
-                        ? new Date(match.fechaHora).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-                        : 'TBD'}
-                    </span>
-                  </div>
+          {/* FASE ELIMINATORIA */}
+          <div className="flex flex-col gap-4">
+            <h3 className="font-header font-black text-sm uppercase tracking-wider text-yellow-400 border-b border-zinc-800 pb-2 flex items-center gap-2">
+              <Trophy className="w-4 h-4 text-yellow-400" />
+              Fase Eliminatoria (Árbol de Cruces)
+            </h3>
 
-                  <div className="flex items-center justify-between py-1">
-                    <span className="font-header font-black text-xs uppercase text-zinc-300 w-5/12 truncate flex items-center gap-1.5">
-                      <span>{homeTeam.logoUrl}</span>
-                      <span className="truncate">{homeTeam.name}</span>
-                    </span>
-                    <span className="w-2/12 text-center font-data font-black text-sm text-yellow-400 bg-yellow-400/10 px-2 py-0.5 border border-yellow-400/20">
-                      {match.homeScore ?? '-'} : {match.awayScore ?? '-'}
-                    </span>
-                    <span className="font-header font-black text-xs uppercase text-zinc-300 w-5/12 truncate flex items-center gap-1.5 justify-end text-right">
-                      <span className="truncate">{awayTeam.name}</span>
-                      <span>{awayTeam.logoUrl}</span>
-                    </span>
-                  </div>
-
-                  <div className="flex items-center justify-between border-t border-zinc-900 pt-3">
-                    <span className="text-[10px] text-zinc-500 font-sans">
-                      {hasStats ? (
-                        <span className="text-emerald-400 font-bold">✓ Datos cargados</span>
-                      ) : (
-                        <span className="text-zinc-650 italic">Sin datos de jugadores</span>
-                      )}
-                    </span>
-                    <button
-                      onClick={() => handleOpenEditor(match)}
-                      className={`text-[10px] font-header font-black uppercase tracking-wider px-3 py-1.5 rounded-none cursor-pointer transition-colors ${
-                        hasStats ? 'bg-zinc-800 text-zinc-350 hover:bg-zinc-700' : 'bg-yellow-400 text-black hover:bg-yellow-500'
-                      }`}
-                    >
-                      {hasStats ? 'Editar Estadísticas' : 'Cargar Goles/Porteros'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+            {knockoutMatchesWithTeams.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {knockoutMatchesWithTeams.map((match) => renderMatchCard(match))}
+              </div>
+            ) : (
+              <div className="p-6 bg-zinc-950 border border-zinc-850 text-center text-xs text-zinc-500 italic font-header uppercase tracking-wider">
+                La fase eliminatoria no ha comenzado o no hay partidos con cruces definidos aún.
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -579,7 +721,23 @@ export default function StatsPanel({
       {/* MODAL: EDITOR DE ESTADÍSTICAS DEL PARTIDO */}
       {selectedMatch && (
         <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-zinc-900 border border-zinc-850 p-6 max-w-3xl w-full flex flex-col gap-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+          <div className="bg-zinc-900 border border-zinc-850 p-6 max-w-3xl w-full flex flex-col gap-6 shadow-2xl relative max-h-[90vh] overflow-y-auto custom-modal-scrollbar">
+            <style>{`
+              .custom-modal-scrollbar::-webkit-scrollbar {
+                width: 6px;
+                height: 6px;
+              }
+              .custom-modal-scrollbar::-webkit-scrollbar-track {
+                background: #09090b !important;
+              }
+              .custom-modal-scrollbar::-webkit-scrollbar-thumb {
+                background: #27272a !important;
+                border-radius: 3px !important;
+              }
+              .custom-modal-scrollbar::-webkit-scrollbar-thumb:hover {
+                background: #3f3f46 !important;
+              }
+            `}</style>
             
             <button
               onClick={() => setSelectedMatch(null)}
@@ -625,7 +783,7 @@ export default function StatsPanel({
                     <select
                       value={homeScorerId}
                       onChange={(e) => setHomeScorerId(e.target.value)}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      className="flex-1 min-w-0 w-full bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400 truncate"
                     >
                       <option value="">-- Seleccionar Goleador --</option>
                       {findTeam(selectedMatch.homeTeamId)?.players?.map(p => (
@@ -667,10 +825,10 @@ export default function StatsPanel({
 
                 {/* Lista de goleadores locales añadidos */}
                 <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[120px] pr-1">
-                  {matchStats[selectedMatch.id]?.scorers
+                  {modalScorers
                     .filter(s => {
                       // Filtrar para el equipo local
-                      return findTeam(selectedMatch.homeTeamId)?.players?.some(p => p.id === s.playerId) || s.playerId.startsWith('custom_') || false;
+                      return findTeam(selectedMatch.homeTeamId)?.players?.some(p => p.id === s.playerId) || s.playerId.startsWith('custom_h_') || false;
                     })
                     .map((s, idx) => (
                       <div key={idx} className="flex justify-between items-center p-2 bg-zinc-900/60 border border-zinc-900 text-xs">
@@ -702,7 +860,7 @@ export default function StatsPanel({
                     <select
                       value={awayScorerId}
                       onChange={(e) => setAwayScorerId(e.target.value)}
-                      className="flex-1 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      className="flex-1 min-w-0 w-full bg-zinc-900 border border-zinc-800 text-white text-xs font-sans px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-yellow-400 truncate"
                     >
                       <option value="">-- Seleccionar Goleador --</option>
                       {findTeam(selectedMatch.awayTeamId)?.players?.map(p => (
@@ -744,7 +902,7 @@ export default function StatsPanel({
 
                 {/* Lista de goleadores visitantes añadidos */}
                 <div className="flex flex-col gap-1.5 overflow-y-auto max-h-[120px] pr-1">
-                  {matchStats[selectedMatch.id]?.scorers
+                  {modalScorers
                     .filter(s => {
                       // Filtrar para el equipo visitante
                       return findTeam(selectedMatch.awayTeamId)?.players?.some(p => p.id === s.playerId) || s.playerId.startsWith('custom_a_') || false;
@@ -768,6 +926,15 @@ export default function StatsPanel({
 
             </div>
 
+            {/* Botón guardar goleadores */}
+            <button
+              type="button"
+              onClick={() => handleSaveAllStats(false)}
+              className="w-full py-2 bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 font-header font-black uppercase text-[10px] tracking-wider transition-colors cursor-pointer mb-2"
+            >
+              Guardar Goleadores del Partido
+            </button>
+
             {/* SECCIÓN DE PORTEROS DEL PARTIDO */}
             <div className="flex flex-col gap-4 bg-zinc-950 p-4 border border-zinc-850">
               <span className="font-header font-black text-xs text-white border-b border-zinc-900 pb-1.5 flex justify-between items-center">
@@ -783,7 +950,7 @@ export default function StatsPanel({
                     <select
                       value={homeGkId}
                       onChange={(e) => setHomeGkId(e.target.value)}
-                      className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      className="h-8 px-2.5 min-w-0 w-full bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400 truncate"
                     >
                       <option value="">-- Seleccionar Portero --</option>
                       {findTeam(selectedMatch.homeTeamId)?.players?.map(p => (
@@ -838,7 +1005,7 @@ export default function StatsPanel({
                     <select
                       value={awayGkId}
                       onChange={(e) => setAwayGkId(e.target.value)}
-                      className="h-8 px-2.5 bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400"
+                      className="h-8 px-2.5 min-w-0 w-full bg-zinc-900 border border-zinc-800 text-white text-xs font-sans focus:outline-none focus:ring-1 focus:ring-yellow-400 truncate"
                     >
                       <option value="">-- Seleccionar Portero --</option>
                       {findTeam(selectedMatch.awayTeamId)?.players?.map(p => (
@@ -890,8 +1057,8 @@ export default function StatsPanel({
               {/* Botón guardar porteros */}
               <button
                 type="button"
-                onClick={handleSaveGoalkeepers}
-                className="w-full py-2 bg-zinc-850 hover:bg-zinc-800 border border-zinc-800 text-white font-header font-black uppercase text-[10px] tracking-wider transition-colors cursor-pointer mt-2"
+                onClick={() => handleSaveAllStats(false)}
+                className="w-full py-2 bg-yellow-400/10 hover:bg-yellow-400/20 border border-yellow-400/30 text-yellow-400 font-header font-black uppercase text-[10px] tracking-wider transition-colors cursor-pointer mt-2"
               >
                 Guardar Porteros del Partido
               </button>
@@ -900,10 +1067,10 @@ export default function StatsPanel({
             {/* Footer del Modal */}
             <div className="flex justify-end border-t border-zinc-800 pt-4">
               <button
-                onClick={() => setSelectedMatch(null)}
+                onClick={() => handleSaveAllStats(true)}
                 className="px-5 py-2 bg-yellow-400 hover:bg-yellow-500 text-black font-header font-black uppercase text-xs tracking-wider transition-colors cursor-pointer"
               >
-                Finalizar Edición del Partido
+                Guardar y Finalizar
               </button>
             </div>
 

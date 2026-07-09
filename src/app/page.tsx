@@ -247,8 +247,13 @@ export default function Home() {
   }, [registeredTeams, groups, knockoutMatches, matchStats, activeTab, config, currentTournamentId, isTournamentActive, savedTournaments]);
 
   // Manejar el guardado explícito en local y en MongoDB
-  const handleSaveTournament = async () => {
+  const handleSaveTournament = async (updatedStats?: Record<string, MatchStats> | React.MouseEvent) => {
     if (!currentTournamentId) return;
+
+    // Verificar si el argumento es un evento de ratón para ignorarlo
+    const statsToSave = (updatedStats && !('nativeEvent' in updatedStats))
+      ? (updatedStats as Record<string, MatchStats>)
+      : matchStats;
 
     const targetTournament = {
       id: currentTournamentId,
@@ -260,7 +265,7 @@ export default function Home() {
       registeredTeams,
       groups,
       knockoutMatches,
-      matchStats,
+      matchStats: statsToSave,
       activeTab
     };
 
@@ -613,7 +618,7 @@ export default function Home() {
             {isTournamentActive && (
               <>
                 <button
-                  onClick={handleSaveTournament}
+                  onClick={() => handleSaveTournament()}
                   className="flex items-center gap-1.5 text-xs px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-black font-header font-black uppercase tracking-tight rounded-none transition-all cursor-pointer"
                 >
                   <Save className="w-3.5 h-3.5" />
@@ -816,6 +821,7 @@ export default function Home() {
                   knockoutMatches={knockoutMatches}
                   matchStats={matchStats}
                   setMatchStats={setMatchStats}
+                  onSaveTournament={handleSaveTournament}
                 />
               )}
             </div>
