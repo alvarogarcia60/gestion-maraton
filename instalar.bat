@@ -52,10 +52,17 @@ pause
 exit /b
 
 
-:: 3. Clonar repositorio
+:: 3. Clonar repositorio o detectar directorio actual
 :clone_repo
 echo [OK] Node.js detectado.
-if exist "gestion-maraton" goto install_deps
+if exist "package.json" (
+    echo [OK] Ejecutando desde el directorio del proyecto.
+    goto create_env
+)
+if exist "gestion-maraton" (
+    cd gestion-maraton
+    goto create_env
+)
 
 echo.
 echo [PROCESO] Clonando el repositorio...
@@ -65,18 +72,28 @@ if %errorlevel% neq 0 (
     pause
     exit /b
 )
+cd gestion-maraton
+goto create_env
+
+
+:: 4. Crear archivo .env.local
+:create_env
+if not exist ".env.local" (
+    echo.
+    echo [PROCESO] Creando archivo .env.local con la configuracion de MongoDB...
+    (
+        echo # Conexion a la base de datos de MongoDB
+        echo MONGODB_URI=mongodb+srv://algarcimartinez_cb_user:mu077OmChkakRI6x@cluster0.50okkq9.mongodb.net/programafutbol?retryWrites=true^&w=majority^&appName=Cluster0
+    ) > .env.local
+    echo [OK] Archivo .env.local creado correctamente.
+) else (
+    echo [OK] Archivo .env.local ya existe.
+)
 goto install_deps
 
 
-:: 4. Instalar dependencias
+:: 5. Instalar dependencias
 :install_deps
-if not exist "gestion-maraton" (
-    echo [ERROR] No se encuentra la carpeta del proyecto.
-    pause
-    exit /b
-)
-
-cd gestion-maraton
 echo.
 echo [PROCESO] Instalando dependencias (npm install)...
 call npm install
@@ -89,7 +106,7 @@ if %errorlevel% neq 0 (
 echo [OK] Dependencias instaladas.
 
 
-:: 5. Abrir VS Code y arrancar
+:: 6. Abrir VS Code y arrancar
 echo.
 echo [PROCESO] Abriendo Visual Studio Code...
 code .
