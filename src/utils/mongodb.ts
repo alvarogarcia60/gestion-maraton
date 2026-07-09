@@ -1,4 +1,14 @@
 import { MongoClient } from 'mongodb';
+import dns from 'dns';
+
+// Solución para errores "querySrv ECONNREFUSED" en ciertos routers/redes al resolver SRV de MongoDB
+if (typeof dns.setServers === 'function') {
+  try {
+    dns.setServers(['1.1.1.1', '8.8.8.8']);
+  } catch (e) {
+    console.warn('No se pudieron configurar los DNS públicos para la conexión de MongoDB:', e);
+  }
+}
 
 const uri = process.env.MONGODB_URI || '';
 const options = {};
